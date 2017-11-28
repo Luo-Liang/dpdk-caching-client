@@ -44,6 +44,7 @@
 #include <rte_per_lcore.h>
 #include <rte_lcore.h>
 #include <rte_debug.h>
+#include <rte_ethdev.h>
 
 static int
 lcore_hello(__attribute__((unused)) void *arg)
@@ -58,7 +59,7 @@ int
 main(int argc, char **argv)
 {
 	int ret;
-	unsigned lcore_id;
+	unsigned lcore_id, nb_ports;
 
     /* Initialize the Environment Abstraction Layer (EAL) */
 	ret = rte_eal_init(argc, argv);
@@ -67,6 +68,13 @@ main(int argc, char **argv)
 
     argc -= ret;
     argv += ret;
+
+    /* Check that there is an even number of ports to send/receive on. */
+    nb_ports = rte_eth_dev_count();
+    if (nb_ports < 2 || (nb_ports & 1))
+        rte_exit(EXIT_FAILURE, "Error: number of ports must be even\n");
+
+    printf("I have %d ports\n", nb_ports);
 
 	/* call lcore_hello() on every slave lcore */
 	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
