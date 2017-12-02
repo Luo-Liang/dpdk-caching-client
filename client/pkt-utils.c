@@ -28,14 +28,16 @@ pkt_size (enum pkt_type type)
 }
 
 int
-pkt_header_build()
+pkt_header_build(char *pkt_ptr,
+                 int src_id,
+                 int des_id)
 {
     return 0;
 }
 
 int
-pkt_data_build()
+pkt_data_build(char *pkt_ptr,
+               enum pkt_type type)
 {
     return 0;
 }
-

@@ -5,6 +5,13 @@
 #include <string.h>
 #include "cluster-cfg.h"
 
+#define ETHER_ADDR_LEN 6
+#define IP_ADDR_LEN 4
+
+/*struct ether_addr {
+    uint8_t addr_bytes[ETHER_ADDR_LEN];
+} __attribute__((packed));*/
+
 typedef struct _endhost {
     int id;
     uint8_t mac[ETHER_ADDR_LEN];

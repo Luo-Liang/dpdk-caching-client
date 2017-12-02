@@ -47,6 +47,7 @@
 #include <rte_debug.h>
 #include <rte_ethdev.h>
 
+#include "cluster-cfg.h"
 #include "pkt-utils.h"
 
 #define NUM_MBUFS 8191
@@ -86,6 +87,9 @@ static const struct rte_eth_conf port_conf_default = {
     },
 };
 
+// FIXME
+const uint8_t myport = 0;
+
 /*
  * FIXME: Only initialize port 0 using global settings
  */
@@ -102,8 +106,6 @@ port_init(struct lcore_args *largs,
     // Just check
     nb_ports = rte_eth_dev_count();
     printf("Number of ports of the server is %"PRIu8 "\n", nb_ports);
-    // FIXME: initialize port 0
-    myport = 0;
 
     // More initialization
     rte_eth_macaddr_get(myport, &myaddr);
@@ -166,18 +168,18 @@ lcore_execute(__attribute__((unused)) void *arg)
     volatile enum benchmark_phase *phase;
     struct rte_mbuf *bufs[BATCH_SIZE];
     uint16_t n, bsz, i;
+    char *pkt_ptr;
 
     myarg = (struct lcore_args *)arg;
     queue = myarg->tid;
     pool = myarg->pool;
     phase = myarg->phase;
     bsz = BATCH_SIZE;
-    portid = 0; // FIXME
 
     do {
         /* Receive responses */
         do {
-            if ((n = rte_eth_rx_burst(portid, queue, bufs, bsz)) < 0) {
+            if ((n = rte_eth_rx_burst(myport, queue, bufs, bsz)) < 0) {
                 rte_exit(EXIT_FAILURE, "Error: rte_eth_rx_burst failed\n");
             }
 
@@ -193,13 +195,21 @@ lcore_execute(__attribute__((unused)) void *arg)
                 break;
             }
         }
-
         n = i;
 
         for (i = 0; i < n; i++) {
+            pkt_ptr = rte_pktmbuf_append(bufs[i], pkt_size(myarg->type));
+            pkt_header_build(pkt_ptr, myarg->src_id, myarg->des_id);
+            pkt_data_build(pkt_ptr, myarg->type);
+        }
+
+        i = rte_eth_tx_burst(myport, queue, bufs, n);
+        /* free non-sent buffers */
+        for (; i < n; i++) {
+            rte_pktmbuf_free(bufs[i]);
         }
     } while (*phase != BENCHMARK_DONE);
-    printf("worker done\n");
+    printf("worker %"PRIu8 " done\n", myarg->tid);
 
 	return 0;
 }
