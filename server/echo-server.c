@@ -37,6 +37,7 @@
 #include <errno.h>
 #include <sys/queue.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 #include <rte_memory.h>
 #include <rte_memzone.h>
@@ -47,6 +48,7 @@
 #include <rte_debug.h>
 #include <rte_ethdev.h>
 
+#include "cluster-cfg.h"
 #include "pkt-utils.h"
 
 #define NUM_MBUFS 8191
@@ -54,13 +56,6 @@
 #define RX_RING_SIZE 512
 #define TX_RING_SIZE 512
 #define BATCH_SIZE 32
-
-enum benchmark_phase {
-    BENCHMARK_WARMUP,
-    BENCHMARK_RUNNING,
-    BENCHMARK_COOLDOWN,
-    BENCHMARK_DONE,
-} __attribute__((aligned(64)));
 
 struct lcore_args {
     int src_id, des_id;
@@ -78,23 +73,31 @@ struct settings{
 
 static const struct rte_eth_conf port_conf_default = {
     .rxmode = { 
-        .max_rx_pkt_len = ETHER_MAX_LEN,
         .mq_mode = ETH_MQ_RX_RSS,
     },
     .txmode = {
         .mq_mode = ETH_MQ_TX_NONE,
+    },
+    .rx_adv_conf = {
+        .rss_conf = {
+            .rss_hf = ETH_RSS_NONFRAG_IPV4_UDP,
+        },
+    },
+    .fdir_conf = {
+        .mode = RTE_FDIR_MODE_NONE,
     },
 };
 
 /*
  * FIXME: Only initialize port 0 using global settings
  */
+const uint8_t myport = 0;
 static inline int
 port_init(struct lcore_args *largs, 
           uint8_t threadnum)
 {
     struct rte_eth_conf port_conf = port_conf_default;
-    uint8_t q, rx_rings, tx_rings, nb_ports, myport;
+    uint8_t q, rx_rings, tx_rings, nb_ports;
     int retval, i;
     char bufpool_name[32];
     struct ether_addr myaddr;
@@ -102,8 +105,6 @@ port_init(struct lcore_args *largs,
     // Just check
     nb_ports = rte_eth_dev_count();
     printf("Number of ports of the server is %"PRIu8 "\n", nb_ports);
-    // FIXME: initialize port 0
-    myport = 0;
 
     // More initialization
     rte_eth_macaddr_get(myport, &myaddr);
@@ -160,46 +161,36 @@ port_init(struct lcore_args *largs,
 static int
 lcore_execute(__attribute__((unused)) void *arg)
 {
+    int n;
     struct lcore_args *myarg;
-    uint8_t queue, portid;
-    struct rte_mempool *pool;
-    volatile enum benchmark_phase *phase;
+    uint8_t queue;
     struct rte_mbuf *bufs[BATCH_SIZE];
-    uint16_t n, bsz, i;
+    uint16_t bsz, i, j;
 
     myarg = (struct lcore_args *)arg;
     queue = myarg->tid;
-    pool = myarg->pool;
-    phase = myarg->phase;
     bsz = BATCH_SIZE;
-    portid = 0; // FIXME
+
+    printf("Server worker %"PRIu8 " started\n", myarg->tid);
 
     do {
-        /* Receive responses */
-        do {
-            if ((n = rte_eth_rx_burst(portid, queue, bufs, bsz)) < 0) {
-                rte_exit(EXIT_FAILURE, "Error: rte_eth_rx_burst failed\n");
-            }
-
-            for (i = 0; i < n; i++) {
-                rte_pktmbuf_free(bufs[i]);
-            }
-
-        } while (n == bsz); // More packets in the RX queue
-
-        /* Send requests */
-        for (i = 0; i < bsz; i++) {
-            if ((bufs[i] = rte_pktmbuf_alloc(pool)) == NULL) {
-                break;
-            }
+        /* Receive and process requests */
+        if ((n = rte_eth_rx_burst(myport, queue, bufs, bsz)) < 0) {
+            rte_exit(EXIT_FAILURE, "Error: rte_eth_rx_burst failed\n");
         }
-
-        n = i;
 
         for (i = 0; i < n; i++) {
+            pkt_server_process(bufs[i], myarg->type);
         }
-    } while (*phase != BENCHMARK_DONE);
-    printf("worker done\n");
+
+        i = 0;
+        j = n;
+
+        while (i < j) {
+            n = rte_eth_tx_burst(myport, queue, bufs + i, j - i);
+            i += n;
+        }
+    } while (1);
 
 	return 0;
 }
@@ -207,16 +198,10 @@ lcore_execute(__attribute__((unused)) void *arg)
 int
 main(int argc, char **argv)
 {
-	int ret, i, type;
+	int ret, i;
 	unsigned lcore_id;
     uint8_t threadnum;
     struct lcore_args *largs;
-    volatile enum benchmark_phase phase;
-    struct settings mysettings = {
-        .warmup_time = 1,
-        .run_time = 2,
-        .cooldown_time = 1,
-    };
 
     /* Initialize the Environment Abstraction Layer (EAL) */
 	ret = rte_eal_init(argc, argv);
@@ -228,12 +213,9 @@ main(int argc, char **argv)
 
     /* Initialize application args */
     if (argc != 3) {
-        printf("Usage: %s <type> <dest ID>\n", argv[0]);
-        printf("Packet Type:\n");
-        printf("\t0 -> ECHO\n");
-        printf("Destination ID:\n");
-        printf("\t0 -> n29\n");
-        printf("\t1 -> n30\n");
+        printf("Usage: %s <server type>\n", argv[0]);
+        printf("Server Type:\n");
+        printf("\t0 -> ECHO server\n");
         rte_exit(EXIT_FAILURE, "Error: invalid arguments\n");
     }
 
@@ -242,40 +224,18 @@ main(int argc, char **argv)
     largs = calloc(threadnum, sizeof(*largs));
     for (i = 0; i < threadnum; i++) {
         largs[i].tid = i;
-        largs[i].phase = &phase;
         largs[i].type = atoi(argv[1]);
-        largs[i].des_id = atoi(argv[2]);
     }
     port_init(largs, threadnum);
 
-    /* Start applications */
-    printf("Starting Workers\n");
-    phase = BENCHMARK_WARMUP;
-    if (mysettings.warmup_time) {
-        sleep(mysettings.warmup_time);
-        printf("Warmup done\n");
-    }
-
     /* call lcore_execute() on every slave lcore */
-    /*RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+    RTE_LCORE_FOREACH_SLAVE(lcore_id) {
         rte_eal_remote_launch(lcore_execute, (void *)(largs + lcore_id -1), 
                 lcore_id);
-    }*/
-
-    phase = BENCHMARK_RUNNING;
-    sleep(mysettings.run_time);
-
-    if (mysettings.cooldown_time) {
-        printf("Starting cooldown\n");
-        phase = BENCHMARK_COOLDOWN;
-        sleep(mysettings.cooldown_time);
     }
 
-    phase = BENCHMARK_DONE;
-    printf("Benchmark done\n");
-
+    printf("Master core performs maintainence\n");
 	rte_eal_mp_wait_lcore();
-    /* print status */
 
     free(largs);
 	return 0;

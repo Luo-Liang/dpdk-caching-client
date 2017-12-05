@@ -42,7 +42,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 APP = echo-server
 
 # all source are stored in SRCS-y
-SRCS-y := echo-server.c
+SRCS-y := echo-server.c cluster-cfg.c pkt-utils.c
 
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
