@@ -68,8 +68,8 @@ pkt_header_build(char *pkt_ptr,
     struct endhost *mydes = get_endhost(des_id);
 
     // Ethernet header
-    rte_memcpy(&myhdr->ether.d_addr.addr_bytes, &mydes->mac, ETHER_ADDR_LEN);
-    rte_memcpy(&myhdr->ether.s_addr.addr_bytes, &mysrc->mac, ETHER_ADDR_LEN);
+    rte_memcpy(myhdr->ether.d_addr.addr_bytes, mydes->mac, ETHER_ADDR_LEN);
+    rte_memcpy(myhdr->ether.s_addr.addr_bytes, mysrc->mac, ETHER_ADDR_LEN);
     myhdr->ether.ether_type = htons(ETHER_TYPE_IPv4);
 
     // IP header
@@ -100,8 +100,8 @@ pkt_set_attribute(struct rte_mbuf *buf)
 }
 
 void
-pkt_data_build(char *pkt_ptr,
-               enum pkt_type type)
+pkt_client_data_build(char *pkt_ptr,
+                      enum pkt_type type)
 {
     if (type == ECHO) {
         struct echo_hdr *mypkt = (struct echo_hdr *)pkt_ptr;
@@ -111,8 +111,8 @@ pkt_data_build(char *pkt_ptr,
     }
 }
 
-int pkt_process(struct rte_mbuf *buf,
-                enum pkt_type type)
+int pkt_client_process(struct rte_mbuf *buf,
+                       enum pkt_type type)
 {
     int ret = 0;
 

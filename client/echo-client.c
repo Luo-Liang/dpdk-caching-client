@@ -80,7 +80,6 @@ struct settings{
 
 static const struct rte_eth_conf port_conf_default = {
     .rxmode = { 
-        .max_rx_pkt_len = ETHER_MAX_LEN,
         .mq_mode = ETH_MQ_RX_RSS,
     },
     .txmode = {
@@ -194,7 +193,7 @@ lcore_execute(__attribute__((unused)) void *arg)
 
             for (i = 0; i < n; i++) {
                 if ((*phase == BENCHMARK_RUNNING) && 
-                        pkt_process(bufs[i], myarg->type)) {
+                        pkt_client_process(bufs[i], myarg->type)) {
                     __sync_fetch_and_add(&tot_proc_pkts, 1);
                 }
             }
@@ -218,7 +217,7 @@ lcore_execute(__attribute__((unused)) void *arg)
             pkt_header_build(pkt_ptr, myarg->src_id, myarg->des_id, 
                     myarg->type, queue);
             pkt_set_attribute(bufs[i]);
-            pkt_data_build(pkt_ptr, myarg->type);
+            pkt_client_data_build(pkt_ptr, myarg->type);
         }
 
         i = rte_eth_tx_burst(myport, queue, bufs, n);
@@ -313,6 +312,9 @@ main(int argc, char **argv)
 
 	rte_eal_mp_wait_lcore();
     /* print status */
+    printf("Latency is %lf us\n", (tot_elapsed + 0.0) / (tot_proc_pkts + 0.0));
+    printf("Throughput is %lf reqs/s\n", (tot_proc_pkts + 0.0) / 
+            (mysettings.run_time + 0.0));
 
     free(largs);
 	return 0;
