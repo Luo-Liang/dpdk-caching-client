@@ -22,7 +22,7 @@ struct endhost cluster[] = {
 int
 get_endhost_id (struct ether_addr addr)
 {
-    int i;
+    uint8_t i;
 
     for (i = 0; i < sizeof(cluster)/sizeof(struct endhost); i++) {
         if (!memcmp(cluster[i].mac, addr.addr_bytes, ETHER_ADDR_LEN)) {

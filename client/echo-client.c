@@ -37,6 +37,7 @@
 #include <errno.h>
 #include <sys/queue.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 #include <rte_memory.h>
 #include <rte_memzone.h>
@@ -87,18 +88,21 @@ static const struct rte_eth_conf port_conf_default = {
     },
 };
 
-// FIXME
-const uint8_t myport = 0;
+/* 
+ * Performance statistics
+ */
+uint64_t tot_proc_pkts = 0, tot_elapsed = 0;
 
 /*
  * FIXME: Only initialize port 0 using global settings
  */
+const uint8_t myport = 0;
 static inline int
 port_init(struct lcore_args *largs, 
           uint8_t threadnum)
 {
     struct rte_eth_conf port_conf = port_conf_default;
-    uint8_t q, rx_rings, tx_rings, nb_ports, myport;
+    uint8_t q, rx_rings, tx_rings, nb_ports;
     int retval, i;
     char bufpool_name[32];
     struct ether_addr myaddr;
@@ -162,13 +166,16 @@ port_init(struct lcore_args *largs,
 static int
 lcore_execute(__attribute__((unused)) void *arg)
 {
+    int n;
     struct lcore_args *myarg;
-    uint8_t queue, portid;
+    uint8_t queue;
     struct rte_mempool *pool;
     volatile enum benchmark_phase *phase;
     struct rte_mbuf *bufs[BATCH_SIZE];
-    uint16_t n, bsz, i;
+    uint16_t bsz, i;
     char *pkt_ptr;
+    struct timeval start, end;
+    uint64_t elapsed;
 
     myarg = (struct lcore_args *)arg;
     queue = myarg->tid;
@@ -177,6 +184,8 @@ lcore_execute(__attribute__((unused)) void *arg)
     bsz = BATCH_SIZE;
 
     do {
+        gettimeofday(&start, NULL);
+
         /* Receive and process responses */
         do {
             if ((n = rte_eth_rx_burst(myport, queue, bufs, bsz)) < 0) {
@@ -184,8 +193,9 @@ lcore_execute(__attribute__((unused)) void *arg)
             }
 
             for (i = 0; i < n; i++) {
-                if (pkt_process(bufs[i], myarg->type)) {
-                    // couting
+                if ((*phase == BENCHMARK_RUNNING) && 
+                        pkt_process(bufs[i], myarg->type)) {
+                    __sync_fetch_and_add(&tot_proc_pkts, 1);
                 }
             }
 
@@ -216,6 +226,15 @@ lcore_execute(__attribute__((unused)) void *arg)
         for (; i < n; i++) {
             rte_pktmbuf_free(bufs[i]);
         }
+
+        gettimeofday(&end, NULL);
+        elapsed = (end.tv_sec - start.tv_sec) * 1000000 + 
+            (end.tv_usec - start.tv_usec);
+
+        if (*phase == BENCHMARK_RUNNING) {
+            tot_elapsed += elapsed;
+        }
+
     } while (*phase != BENCHMARK_DONE);
     printf("worker %"PRIu8 " done\n", myarg->tid);
 
@@ -225,7 +244,7 @@ lcore_execute(__attribute__((unused)) void *arg)
 int
 main(int argc, char **argv)
 {
-	int ret, i, type;
+	int ret, i;
 	unsigned lcore_id;
     uint8_t threadnum;
     struct lcore_args *largs;
