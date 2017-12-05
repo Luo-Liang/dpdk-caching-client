@@ -177,10 +177,16 @@ lcore_execute(__attribute__((unused)) void *arg)
     bsz = BATCH_SIZE;
 
     do {
-        /* Receive responses */
+        /* Receive and process responses */
         do {
             if ((n = rte_eth_rx_burst(myport, queue, bufs, bsz)) < 0) {
                 rte_exit(EXIT_FAILURE, "Error: rte_eth_rx_burst failed\n");
+            }
+
+            for (i = 0; i < n; i++) {
+                if (pkt_process(bufs[i], myarg->type)) {
+                    // couting
+                }
             }
 
             for (i = 0; i < n; i++) {
@@ -189,7 +195,7 @@ lcore_execute(__attribute__((unused)) void *arg)
 
         } while (n == bsz); // More packets in the RX queue
 
-        /* Send requests */
+        /* Prepare and send requests */
         for (i = 0; i < bsz; i++) {
             if ((bufs[i] = rte_pktmbuf_alloc(pool)) == NULL) {
                 break;
@@ -199,7 +205,9 @@ lcore_execute(__attribute__((unused)) void *arg)
 
         for (i = 0; i < n; i++) {
             pkt_ptr = rte_pktmbuf_append(bufs[i], pkt_size(myarg->type));
-            pkt_header_build(pkt_ptr, myarg->src_id, myarg->des_id);
+            pkt_header_build(pkt_ptr, myarg->src_id, myarg->des_id, 
+                    myarg->type, queue);
+            pkt_set_attribute(bufs[i]);
             pkt_data_build(pkt_ptr, myarg->type);
         }
 
@@ -267,10 +275,10 @@ main(int argc, char **argv)
     }
 
     /* call lcore_execute() on every slave lcore */
-    /*RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+    RTE_LCORE_FOREACH_SLAVE(lcore_id) {
         rte_eal_remote_launch(lcore_execute, (void *)(largs + lcore_id -1), 
                 lcore_id);
-    }*/
+    }
 
     phase = BENCHMARK_RUNNING;
     sleep(mysettings.run_time);

@@ -5,20 +5,7 @@
 #include <string.h>
 #include "cluster-cfg.h"
 
-#define ETHER_ADDR_LEN 6
-#define IP_ADDR_LEN 4
-
-/*struct ether_addr {
-    uint8_t addr_bytes[ETHER_ADDR_LEN];
-} __attribute__((packed));*/
-
-typedef struct _endhost {
-    int id;
-    uint8_t mac[ETHER_ADDR_LEN];
-    uint8_t ip[IP_ADDR_LEN];
-} __attribute__((packed)) endhost;
-
-endhost cluster[] = {
+struct endhost cluster[] = {
     { // n29
         .id = 0,
         .mac = {0x3c, 0xfd, 0xfe, 0xaa, 0xd1, 0xe0},
@@ -37,11 +24,17 @@ get_endhost_id (struct ether_addr addr)
 {
     int i;
 
-    for (i = 0; i < sizeof(cluster)/sizeof(endhost); i++) {
+    for (i = 0; i < sizeof(cluster)/sizeof(struct endhost); i++) {
         if (!memcmp(cluster[i].mac, addr.addr_bytes, ETHER_ADDR_LEN)) {
             return cluster[i].id;
         }
     }
 
     return -1;
+}
+
+struct endhost*
+get_endhost (int id)
+{
+    return &cluster[id];
 }
