@@ -249,9 +249,9 @@ main(int argc, char **argv)
     struct lcore_args *largs;
     volatile enum benchmark_phase phase;
     struct settings mysettings = {
-        .warmup_time = 1,
-        .run_time = 2,
-        .cooldown_time = 1,
+        .warmup_time = 5,
+        .run_time = 20,
+        .cooldown_time = 5,
     };
 
     /* Initialize the Environment Abstraction Layer (EAL) */
