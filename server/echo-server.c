@@ -165,6 +165,8 @@ lcore_execute(__attribute__((unused)) void *arg)
     struct lcore_args *myarg;
     uint8_t queue;
     struct rte_mbuf *bufs[BATCH_SIZE];
+    struct rte_mbuf *response[BATCH_SIZE];
+    int drops[BATCH_SIZE];
     uint16_t bsz, i, j;
 
     myarg = (struct lcore_args *)arg;
@@ -180,14 +182,20 @@ lcore_execute(__attribute__((unused)) void *arg)
         }
 
         for (i = 0; i < n; i++) {
-            pkt_server_process(bufs[i], myarg->type);
+            drops[i] = pkt_server_process(bufs[i], myarg->type);
+        }
+
+        for (i = 0, j = 0; i < n; i++) {
+            if (drops[i]) {
+                rte_pktmbuf_free(bufs[i]);
+            } else {
+                response[j++] = bufs[i];
+            }
         }
 
         i = 0;
-        j = n;
-
         while (i < j) {
-            n = rte_eth_tx_burst(myport, queue, bufs + i, j - i);
+            n = rte_eth_tx_burst(myport, queue, response + i, j - i);
             i += n;
         }
     } while (1);
@@ -212,7 +220,7 @@ main(int argc, char **argv)
     argv += ret;
 
     /* Initialize application args */
-    if (argc != 3) {
+    if (argc != 2) {
         printf("Usage: %s <server type>\n", argv[0]);
         printf("Server Type:\n");
         printf("\t0 -> ECHO server\n");

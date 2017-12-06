@@ -170,17 +170,32 @@ pkt_server_data_build(char *payload,
     }
 }
 
-void
+int
 pkt_server_process(struct rte_mbuf *buf,
                     enum pkt_type type)
 {
+    int ret = 1;
+
     if (type == ECHO) {
         struct echo_hdr *mypkt;
 
         mypkt = rte_pktmbuf_mtod(buf, struct echo_hdr *);
-        pkt_swap_address(&mypkt->pro_hdr);
-        pkt_server_data_build(mypkt->payload, type);
+        if (!memcmp(mypkt->payload, "ECHO", ECHO_PAYLOAD_LEN)) {
+            pkt_swap_address(&mypkt->pro_hdr);
+            pkt_server_data_build(mypkt->payload, type);
+
+            ret = 0;
+        }
     } else {
         // do nothing
     }
+
+    return ret;
+}
+
+void 
+pkt_dump(struct rte_mbuf *buf)
+{
+    printf("Packet info:\n");
+    rte_pktmbuf_dump(stdout, buf, rte_pktmbuf_pkt_len(buf));
 }
