@@ -270,6 +270,7 @@ main(int argc, char **argv)
         printf("Destination ID:\n");
         printf("\t0 -> n29\n");
         printf("\t1 -> n30\n");
+        printf("\t2 -> n36\n");
         rte_exit(EXIT_FAILURE, "Error: invalid arguments\n");
     }
 

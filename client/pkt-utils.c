@@ -26,7 +26,7 @@ struct common_hdr {
 } __attribute__((packed));
 
 /* Application Headers */
-#define ECHO_PAYLOAD_LEN 4
+#define ECHO_PAYLOAD_LEN 14
 struct echo_hdr {
     struct common_hdr pro_hdr;
     char payload[ECHO_PAYLOAD_LEN];
@@ -105,7 +105,8 @@ pkt_client_data_build(char *pkt_ptr,
 {
     if (type == ECHO) {
         struct echo_hdr *mypkt = (struct echo_hdr *)pkt_ptr;
-        rte_memcpy(mypkt->payload, "ECHO", ECHO_PAYLOAD_LEN);
+        rte_memcpy(mypkt->payload, "ECHO", 4);
+        memset(mypkt->payload + 4, 0x66, ECHO_PAYLOAD_LEN - 4);
     } else {
         // do nothing
     }
@@ -120,7 +121,7 @@ int pkt_client_process(struct rte_mbuf *buf,
         struct echo_hdr *mypkt;
 
         mypkt = rte_pktmbuf_mtod(buf, struct echo_hdr *);
-        if (!memcmp(mypkt->payload, "ACK ", ECHO_PAYLOAD_LEN)) {
+        if (!memcmp(mypkt->payload, "ACKD", 4)) {
             ret = 1;
         }
     } else {
