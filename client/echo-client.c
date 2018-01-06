@@ -55,7 +55,7 @@
 #define MBUF_CACHE_SIZE 250
 #define RX_RING_SIZE 512
 #define TX_RING_SIZE 512
-#define BATCH_SIZE 32
+#define BATCH_SIZE 36
 
 enum benchmark_phase {
     BENCHMARK_WARMUP,
