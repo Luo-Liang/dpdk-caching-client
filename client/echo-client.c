@@ -271,6 +271,7 @@ main(int argc, char **argv)
         printf("\t0 -> n29\n");
         printf("\t1 -> n30\n");
         printf("\t2 -> n36\n");
+        printf("\t3 -> n25\n");
         rte_exit(EXIT_FAILURE, "Error: invalid arguments\n");
     }
 
