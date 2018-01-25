@@ -26,8 +26,8 @@ struct common_hdr {
 } __attribute__((packed));
 
 /* Application Headers */
-#define ECHO_PAYLOAD_LEN 64
-//#define ECHO_PAYLOAD_LEN 1024
+#define ECHO_PAYLOAD_LEN 1024
+//#define ECHO_PAYLOAD_LEN 64
 struct echo_hdr {
     struct common_hdr pro_hdr;
     char payload[ECHO_PAYLOAD_LEN];
