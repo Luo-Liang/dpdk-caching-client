@@ -164,7 +164,7 @@ pkt_server_data_build(char *payload,
                       enum pkt_type type)
 {
     if (type == ECHO) {
-        rte_memcpy(payload, "ACK ", ECHO_PAYLOAD_LEN);
+        rte_memcpy(payload, "ACKD", ECHO_PAYLOAD_LEN);
     } else {
         // do nothing
     }
