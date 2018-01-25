@@ -168,6 +168,9 @@ lcore_execute(__attribute__((unused)) void *arg)
     struct rte_mbuf *response[BATCH_SIZE];
     int drops[BATCH_SIZE];
     uint16_t bsz, i, j;
+    struct timeval start, end;
+    static unsigned long long send_elapsed = 0, send_cnt = 0;
+    static unsigned long long recv_elapsed = 0, recv_cnt = 0;
 
     myarg = (struct lcore_args *)arg;
     queue = myarg->tid;
@@ -176,9 +179,18 @@ lcore_execute(__attribute__((unused)) void *arg)
     printf("Server worker %"PRIu8 " started\n", myarg->tid);
 
     do {
+        gettimeofday(&start, NULL);
         /* Receive and process requests */
         if ((n = rte_eth_rx_burst(myport, queue, bufs, bsz)) < 0) {
             rte_exit(EXIT_FAILURE, "Error: rte_eth_rx_burst failed\n");
+        }
+        gettimeofday(&end, NULL);
+        recv_elapsed += ((end.tv_sec * 1000000 + end.tv_usec) -
+                        (start.tv_sec * 1000000 + start.tv_usec));
+        if ((!(recv_cnt % 1000000)) && (recv_cnt != 0) 
+                && (recv_cnt < 10000000)) {
+            printf("recv time %lf\n", 
+                    (recv_elapsed + 0.0)/(recv_cnt + 0.0));
         }
 
         for (i = 0; i < n; i++) {
@@ -190,13 +202,25 @@ lcore_execute(__attribute__((unused)) void *arg)
                 rte_pktmbuf_free(bufs[i]);
             } else {
                 response[j++] = bufs[i];
+
+                recv_cnt++;
             }
         }
 
+        gettimeofday(&start, NULL);
         i = 0;
         while (i < j) {
             n = rte_eth_tx_burst(myport, queue, response + i, j - i);
             i += n;
+        }
+        gettimeofday(&end, NULL);
+        send_elapsed += ((end.tv_sec * 1000000 + end.tv_usec) -
+                         (start.tv_sec * 1000000 + start.tv_usec));
+        send_cnt += j;
+        if ((!(send_cnt % 1000000)) && (send_cnt != 0) && 
+                (send_cnt < 10000000)) {
+            printf("send time is %lf\n",
+                    (send_elapsed + 0.0)/(recv_cnt + 0.0));
         }
     } while (1);
 
