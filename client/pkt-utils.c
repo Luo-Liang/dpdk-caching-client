@@ -8,7 +8,7 @@
 #include <rte_udp.h>
 #include <rte_memcpy.h>
 
-#include "cluster-cfg.h"
+#include "../cluster-cfg/cluster-cfg.h"
 #include "pkt-utils.h"
 
 /* Marcos */
@@ -26,8 +26,9 @@ struct common_hdr {
 } __attribute__((packed));
 
 /* Application Headers */
-#define ECHO_PAYLOAD_LEN 1024
+//#define ECHO_PAYLOAD_LEN 1024
 //#define ECHO_PAYLOAD_LEN 64
+#define ECHO_PAYLOAD_LEN 46
 struct echo_hdr {
     struct common_hdr pro_hdr;
     char payload[ECHO_PAYLOAD_LEN];

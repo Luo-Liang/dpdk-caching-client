@@ -48,7 +48,7 @@
 #include <rte_debug.h>
 #include <rte_ethdev.h>
 
-#include "cluster-cfg.h"
+#include "../cluster-cfg/cluster-cfg.h"
 #include "pkt-utils.h"
 
 #define NUM_MBUFS 8191
@@ -268,10 +268,8 @@ main(int argc, char **argv)
         printf("Packet Type:\n");
         printf("\t0 -> ECHO\n");
         printf("Destination ID:\n");
-        printf("\t0 -> n29\n");
-        printf("\t1 -> n30\n");
-        printf("\t2 -> n36\n");
-        printf("\t3 -> n25\n");
+        printf("\t0 -> nyala\n");
+        printf("\t1 -> okapi\n");
         rte_exit(EXIT_FAILURE, "Error: invalid arguments\n");
     }
 

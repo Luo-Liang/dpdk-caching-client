@@ -48,7 +48,7 @@
 #include <rte_debug.h>
 #include <rte_ethdev.h>
 
-#include "cluster-cfg.h"
+#include "../cluster-cfg/cluster-cfg.h"
 #include "pkt-utils.h"
 
 #define NUM_MBUFS 8191
@@ -56,6 +56,7 @@
 #define RX_RING_SIZE 512
 #define TX_RING_SIZE 512
 #define BATCH_SIZE 32
+//#define PERF_DEBUG
 
 struct lcore_args {
     int src_id, des_id;
@@ -168,9 +169,12 @@ lcore_execute(__attribute__((unused)) void *arg)
     struct rte_mbuf *response[BATCH_SIZE];
     int drops[BATCH_SIZE];
     uint16_t bsz, i, j;
+
+#ifdef PERF_DEBUG
     struct timeval start, end;
     static unsigned long long send_elapsed = 0, send_cnt = 0;
     static unsigned long long recv_elapsed = 0, recv_cnt = 0;
+#endif
 
     myarg = (struct lcore_args *)arg;
     queue = myarg->tid;
@@ -179,11 +183,14 @@ lcore_execute(__attribute__((unused)) void *arg)
     printf("Server worker %"PRIu8 " started\n", myarg->tid);
 
     do {
+#ifdef PERF_DEBUG
         gettimeofday(&start, NULL);
+#endif 
         /* Receive and process requests */
         if ((n = rte_eth_rx_burst(myport, queue, bufs, bsz)) < 0) {
             rte_exit(EXIT_FAILURE, "Error: rte_eth_rx_burst failed\n");
         }
+#ifdef PERF_DEBUG
         gettimeofday(&end, NULL);
         recv_elapsed += ((end.tv_sec * 1000000 + end.tv_usec) -
                         (start.tv_sec * 1000000 + start.tv_usec));
@@ -192,6 +199,7 @@ lcore_execute(__attribute__((unused)) void *arg)
             printf("recv time %lf\n", 
                     (recv_elapsed + 0.0)/(recv_cnt + 0.0));
         }
+#endif
 
         for (i = 0; i < n; i++) {
             drops[i] = pkt_server_process(bufs[i], myarg->type);
@@ -203,16 +211,24 @@ lcore_execute(__attribute__((unused)) void *arg)
             } else {
                 response[j++] = bufs[i];
 
+#ifdef PERF_DEBUG
                 recv_cnt++;
+#endif
+
             }
         }
 
+#ifdef PERF_DEBUG
         gettimeofday(&start, NULL);
+#endif
+
         i = 0;
         while (i < j) {
             n = rte_eth_tx_burst(myport, queue, response + i, j - i);
             i += n;
         }
+
+#ifdef PERF_DEBUG
         gettimeofday(&end, NULL);
         send_elapsed += ((end.tv_sec * 1000000 + end.tv_usec) -
                          (start.tv_sec * 1000000 + start.tv_usec));
@@ -222,6 +238,7 @@ lcore_execute(__attribute__((unused)) void *arg)
             printf("send time is %lf\n",
                     (send_elapsed + 0.0)/(recv_cnt + 0.0));
         }
+#endif
     } while (1);
 
 	return 0;

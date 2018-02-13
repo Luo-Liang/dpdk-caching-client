@@ -8,7 +8,7 @@
 #include <rte_udp.h>
 #include <rte_memcpy.h>
 
-#include "cluster-cfg.h"
+#include "../cluster-cfg/cluster-cfg.h"
 #include "pkt-utils.h"
 
 /* Marcos */
