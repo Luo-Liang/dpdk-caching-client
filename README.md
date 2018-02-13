@@ -6,9 +6,9 @@ processors and 24G memory. This server is quite hard to saturate
 bandwidth using small packets (46 bytes payload).
 
 ## -> 1-server-thread
-                    Latency(us)     Throughput(reqs/s)
-1-client-thread     0.17            5.6M
-2-client-thread     0.20            9.5M    
+|                   | Latency(us)   |   Throughput(reqs/s) |
+| 1-client-thread   |  0.17         |   5.6M |
+| 2-client-thread   |  0.20         |   9.5M |  
 
 ## -> 2-server-thread
                     Latency(us)     Throughput(reqs/s)
