@@ -32,7 +32,7 @@ bandwidth using small packets.
 |-------------------|---------------|----------------------|
 | 1-client-thread   |  0.10         |   9.6M |
 
-## -> 1-server-thread (1024B)
+## 2.3. Using 1-server-thread (1024B)
 |                   | Latency(us)   |   Throughput(reqs/s) |
 |-------------------|---------------|----------------------|
 | 1-client-thread   |  0.86         |   1.1M |
