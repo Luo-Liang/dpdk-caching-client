@@ -270,6 +270,10 @@ main(int argc, char **argv)
         printf("Destination ID:\n");
         printf("\t0 -> nyala\n");
         printf("\t1 -> okapi\n");
+        printf("\t2 -> guanaco\n");
+        printf("\t3 -> hippopotamus\n");
+        printf("\t4 -> dikdik\n");
+        printf("\t5 -> fossa\n");
         rte_exit(EXIT_FAILURE, "Error: invalid arguments\n");
     }
 
