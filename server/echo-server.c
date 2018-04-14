@@ -59,7 +59,7 @@
 //#define PERF_DEBUG
 
 struct lcore_args {
-    int src_id, des_id;
+    int *src_id, des_id;
     enum pkt_type type;
     uint8_t tid;
     volatile enum benchmark_phase *phase;
@@ -89,10 +89,6 @@ static const struct rte_eth_conf port_conf_default = {
     },
 };
 
-/*
- * FIXME: Only initialize port 0 using global settings
- */
-const uint8_t myport = 0;
 static inline int
 port_init(struct lcore_args *largs, 
           uint8_t threadnum)
@@ -102,17 +98,13 @@ port_init(struct lcore_args *largs,
     int retval, i;
     char bufpool_name[32];
     struct ether_addr myaddr;
+    uint16_t port;
 
-    // Just check
     nb_ports = rte_eth_dev_count();
     printf("Number of ports of the server is %"PRIu8 "\n", nb_ports);
 
-    // More initialization
-    rte_eth_macaddr_get(myport, &myaddr);
     for (i = 0; i < threadnum; i++) {
         largs[i].tid = i;
-        largs[i].src_id = get_endhost_id(myaddr);
-
         sprintf(bufpool_name, "bufpool_%d", i);
         largs[i].pool = rte_pktmbuf_pool_create(bufpool_name,
                     NUM_MBUFS * threadnum, MBUF_CACHE_SIZE, 0,
@@ -120,41 +112,49 @@ port_init(struct lcore_args *largs,
         if (largs[i].pool == NULL) {
             rte_exit(EXIT_FAILURE, "Error: rte_pktmbuf_pool_create failed\n");
         }
-    }
-
-    rx_rings = tx_rings = threadnum;
-    /* Configure the Ethernet device of a given port */
-    retval = rte_eth_dev_configure(myport, rx_rings, tx_rings, &port_conf);
-    if (retval != 0) {
-        return retval;
-    }
-
-    /* Allocate and set up RX queues for a given Ethernet port */
-    for (q = 0; q < rx_rings; q++) {
-        retval = rte_eth_rx_queue_setup(myport, q, RX_RING_SIZE,
-                rte_eth_dev_socket_id(myport), NULL, largs[q].pool);
-        if (retval < 0) {
-            return retval;
+        largs[i].src_id = (int *)malloc(sizeof(int) * nb_ports);
+        for (port = 0; port < nb_ports; port++) {
+            rte_eth_macaddr_get(port, &myaddr);
+            largs[i].src_id[port] = get_endhost_id(myaddr);
         }
     }
 
-    /* Allocate and set up TX queues for a given Ethernet port */
-    for (q = 0; q < tx_rings; q++) {
-        retval = rte_eth_tx_queue_setup(myport, q, TX_RING_SIZE,
-                rte_eth_dev_socket_id(myport), NULL);
+    for (port = 0; port < nb_ports; port++) {
+        rx_rings = tx_rings = threadnum;
+
+        /* Configure the Ethernet device of a given port */
+        retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
+        if (retval != 0) {
+            return retval;
+        }
+
+        /* Allocate and set up RX queues for a given Ethernet port */
+        for (q = 0; q < rx_rings; q++) {
+            retval = rte_eth_rx_queue_setup(port, q, RX_RING_SIZE,
+                    rte_eth_dev_socket_id(port), NULL, largs[q].pool);
+            if (retval < 0) {
+                return retval;
+            }
+        }
+
+        /* Allocate and set up TX queues for a given Ethernet port */
+        for (q = 0; q < tx_rings; q++) {
+            retval = rte_eth_tx_queue_setup(port, q, TX_RING_SIZE,
+                    rte_eth_dev_socket_id(port), NULL);
+            if (retval < 0) {
+                return retval;
+            }
+        }
+
+        /* Start the Ethernet port */
+        retval = rte_eth_dev_start(port);
         if (retval < 0) {
             return retval;
         }
-    }
 
-    /* Start the Ethernet port */
-    retval = rte_eth_dev_start(myport);
-    if (retval < 0) {
-        return retval;
+        /* Enable RX in promiscuous mode for the Ethernet device */
+        rte_eth_promiscuous_enable(port);
     }
-
-    /* Enable RX in promiscuous mode for the Ethernet device */
-    rte_eth_promiscuous_enable(myport);
 
     return 0;
 }
@@ -168,7 +168,7 @@ lcore_execute(__attribute__((unused)) void *arg)
     struct rte_mbuf *bufs[BATCH_SIZE];
     struct rte_mbuf *response[BATCH_SIZE];
     int drops[BATCH_SIZE];
-    uint16_t bsz, i, j;
+    uint16_t bsz, i, j, port, nb_ports;
 
 #ifdef PERF_DEBUG
     struct timeval start, end;
@@ -179,6 +179,7 @@ lcore_execute(__attribute__((unused)) void *arg)
     myarg = (struct lcore_args *)arg;
     queue = myarg->tid;
     bsz = BATCH_SIZE;
+    nb_ports = rte_eth_dev_count();
 
     printf("Server worker %"PRIu8 " started\n", myarg->tid);
 
@@ -186,46 +187,49 @@ lcore_execute(__attribute__((unused)) void *arg)
 #ifdef PERF_DEBUG
         gettimeofday(&start, NULL);
 #endif 
-        /* Receive and process requests */
-        if ((n = rte_eth_rx_burst(myport, queue, bufs, bsz)) < 0) {
-            rte_exit(EXIT_FAILURE, "Error: rte_eth_rx_burst failed\n");
-        }
-#ifdef PERF_DEBUG
-        gettimeofday(&end, NULL);
-        recv_elapsed += ((end.tv_sec * 1000000 + end.tv_usec) -
-                        (start.tv_sec * 1000000 + start.tv_usec));
-        if ((!(recv_cnt % 1000000)) && (recv_cnt != 0) 
-                && (recv_cnt < 10000000)) {
-            printf("recv time %lf\n", 
-                    (recv_elapsed + 0.0)/(recv_cnt + 0.0));
-        }
-#endif
 
-        for (i = 0; i < n; i++) {
-            drops[i] = pkt_server_process(bufs[i], myarg->type);
-        }
-
-        for (i = 0, j = 0; i < n; i++) {
-            if (drops[i]) {
-                rte_pktmbuf_free(bufs[i]);
-            } else {
-                response[j++] = bufs[i];
-
-#ifdef PERF_DEBUG
-                recv_cnt++;
-#endif
-
+        for (port = 0; port < nb_ports; port++) {
+            /* Receive and process requests */
+            if ((n = rte_eth_rx_burst(port, queue, bufs, bsz)) < 0) {
+                rte_exit(EXIT_FAILURE, "Error: rte_eth_rx_burst failed\n");
             }
-        }
-
 #ifdef PERF_DEBUG
-        gettimeofday(&start, NULL);
+            gettimeofday(&end, NULL);
+            recv_elapsed += ((end.tv_sec * 1000000 + end.tv_usec) -
+                    (start.tv_sec * 1000000 + start.tv_usec));
+            if ((!(recv_cnt % 1000000)) && (recv_cnt != 0) 
+                    && (recv_cnt < 10000000)) {
+                printf("recv time %lf\n", 
+                        (recv_elapsed + 0.0)/(recv_cnt + 0.0));
+            }
 #endif
 
-        i = 0;
-        while (i < j) {
-            n = rte_eth_tx_burst(myport, queue, response + i, j - i);
-            i += n;
+            for (i = 0; i < n; i++) {
+                drops[i] = pkt_server_process(bufs[i], myarg->type);
+            }
+
+            for (i = 0, j = 0; i < n; i++) {
+                if (drops[i]) {
+                    rte_pktmbuf_free(bufs[i]);
+                } else {
+                    response[j++] = bufs[i];
+
+#ifdef PERF_DEBUG
+                    recv_cnt++;
+#endif
+
+                }
+            }
+
+#ifdef PERF_DEBUG
+            gettimeofday(&start, NULL);
+#endif
+
+            i = 0;
+            while (i < j) {
+                n = rte_eth_tx_burst(port, queue, response + i, j - i);
+                i += n;
+            }
         }
 
 #ifdef PERF_DEBUG

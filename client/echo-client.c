@@ -65,7 +65,7 @@ enum benchmark_phase {
 } __attribute__((aligned(64)));
 
 struct lcore_args {
-    int src_id, des_id;
+    int *src_id, des_id;
     enum pkt_type type;
     uint8_t tid;
     volatile enum benchmark_phase *phase;
@@ -92,12 +92,8 @@ static const struct rte_eth_conf port_conf_default = {
  */
 uint64_t tot_proc_pkts = 0, tot_elapsed = 0;
 
-/*
- * FIXME: Only initialize port 0 using global settings
- */
-const uint8_t myport = 0;
 static inline int
-port_init(struct lcore_args *largs, 
+ports_init(struct lcore_args *largs, 
           uint8_t threadnum)
 {
     struct rte_eth_conf port_conf = port_conf_default;
@@ -105,59 +101,63 @@ port_init(struct lcore_args *largs,
     int retval, i;
     char bufpool_name[32];
     struct ether_addr myaddr;
+    uint16_t port;
 
-    // Just check
     nb_ports = rte_eth_dev_count();
     printf("Number of ports of the server is %"PRIu8 "\n", nb_ports);
 
-    // More initialization
-    rte_eth_macaddr_get(myport, &myaddr);
     for (i = 0; i < threadnum; i++) {
         largs[i].tid = i;
-        largs[i].src_id = get_endhost_id(myaddr);
-
         sprintf(bufpool_name, "bufpool_%d", i);
         largs[i].pool = rte_pktmbuf_pool_create(bufpool_name,
-                    NUM_MBUFS * threadnum, MBUF_CACHE_SIZE, 0,
-                    RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+                NUM_MBUFS * threadnum, MBUF_CACHE_SIZE, 0,
+                RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
         if (largs[i].pool == NULL) {
             rte_exit(EXIT_FAILURE, "Error: rte_pktmbuf_pool_create failed\n");
         }
-    }
-
-    rx_rings = tx_rings = threadnum;
-    /* Configure the Ethernet device of a given port */
-    retval = rte_eth_dev_configure(myport, rx_rings, tx_rings, &port_conf);
-    if (retval != 0) {
-        return retval;
-    }
-
-    /* Allocate and set up RX queues for a given Ethernet port */
-    for (q = 0; q < rx_rings; q++) {
-        retval = rte_eth_rx_queue_setup(myport, q, RX_RING_SIZE,
-                rte_eth_dev_socket_id(myport), NULL, largs[q].pool);
-        if (retval < 0) {
-            return retval;
+        largs[i].src_id = (int *)malloc(sizeof(int) * nb_ports);
+        for (port = 0; port < nb_ports; port++) {
+            rte_eth_macaddr_get(port, &myaddr);
+            largs[i].src_id[port] = get_endhost_id(myaddr);
         }
     }
 
-    /* Allocate and set up TX queues for a given Ethernet port */
-    for (q = 0; q < tx_rings; q++) {
-        retval = rte_eth_tx_queue_setup(myport, q, TX_RING_SIZE,
-                rte_eth_dev_socket_id(myport), NULL);
+    for (port = 0; port < nb_ports; port++) {
+        rx_rings = tx_rings = threadnum;
+
+        /* Configure the Ethernet device of a given port */
+        retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
+        if (retval != 0) {
+            return retval;
+        }
+
+        /* Allocate and set up RX queues for a given Ethernet port */
+        for (q = 0; q < rx_rings; q++) {
+            retval = rte_eth_rx_queue_setup(port, q, RX_RING_SIZE,
+                    rte_eth_dev_socket_id(port), NULL, largs[q].pool);
+            if (retval < 0) {
+                return retval;
+            }
+        }
+
+        /* Allocate and set up TX queues for a given Ethernet port */
+        for (q = 0; q < tx_rings; q++) {
+            retval = rte_eth_tx_queue_setup(port, q, TX_RING_SIZE,
+                    rte_eth_dev_socket_id(port), NULL);
+            if (retval < 0) {
+                return retval;
+            }
+        }
+
+        /* Start the Ethernet port */
+        retval = rte_eth_dev_start(port);
         if (retval < 0) {
             return retval;
         }
-    }
 
-    /* Start the Ethernet port */
-    retval = rte_eth_dev_start(myport);
-    if (retval < 0) {
-        return retval;
+        /* Enable RX in promiscuous mode for the Ethernet device */
+        rte_eth_promiscuous_enable(port);
     }
-
-    /* Enable RX in promiscuous mode for the Ethernet device */
-    rte_eth_promiscuous_enable(myport);
 
     return 0;
 }
@@ -171,7 +171,7 @@ lcore_execute(__attribute__((unused)) void *arg)
     struct rte_mempool *pool;
     volatile enum benchmark_phase *phase;
     struct rte_mbuf *bufs[BATCH_SIZE];
-    uint16_t bsz, i;
+    uint16_t bsz, i, port, nb_ports;
     char *pkt_ptr;
     struct timeval start, end;
     uint64_t elapsed;
@@ -181,49 +181,52 @@ lcore_execute(__attribute__((unused)) void *arg)
     pool = myarg->pool;
     phase = myarg->phase;
     bsz = BATCH_SIZE;
+    nb_ports = rte_eth_dev_count();
 
     do {
         gettimeofday(&start, NULL);
 
-        /* Receive and process responses */
-        do {
-            if ((n = rte_eth_rx_burst(myport, queue, bufs, bsz)) < 0) {
-                rte_exit(EXIT_FAILURE, "Error: rte_eth_rx_burst failed\n");
-            }
+        for (port = 0; port < nb_ports; port++) {
+            /* Receive and process responses */
+            do {
+                if ((n = rte_eth_rx_burst(port, queue, bufs, bsz)) < 0) {
+                    rte_exit(EXIT_FAILURE, "Error: rte_eth_rx_burst failed\n");
+                }
 
-            for (i = 0; i < n; i++) {
-                if ((*phase == BENCHMARK_RUNNING) && 
-                        pkt_client_process(bufs[i], myarg->type)) {
-                    __sync_fetch_and_add(&tot_proc_pkts, 1);
+                for (i = 0; i < n; i++) {
+                    if ((*phase == BENCHMARK_RUNNING) && 
+                            pkt_client_process(bufs[i], myarg->type)) {
+                        __sync_fetch_and_add(&tot_proc_pkts, 1);
+                    }
+                }
+
+                for (i = 0; i < n; i++) {
+                    rte_pktmbuf_free(bufs[i]);
+                }
+
+            } while (n == bsz); // More packets in the RX queue
+
+            /* Prepare and send requests */
+            for (i = 0; i < bsz; i++) {
+                if ((bufs[i] = rte_pktmbuf_alloc(pool)) == NULL) {
+                    break;
                 }
             }
+            n = i;
 
             for (i = 0; i < n; i++) {
+                pkt_ptr = rte_pktmbuf_append(bufs[i], pkt_size(myarg->type));
+                pkt_header_build(pkt_ptr, myarg->src_id[port], myarg->des_id, 
+                        myarg->type, queue);
+                pkt_set_attribute(bufs[i]);
+                pkt_client_data_build(pkt_ptr, myarg->type);
+            }
+
+            i = rte_eth_tx_burst(port, queue, bufs, n);
+            /* free non-sent buffers */
+            for (; i < n; i++) {
                 rte_pktmbuf_free(bufs[i]);
             }
-
-        } while (n == bsz); // More packets in the RX queue
-
-        /* Prepare and send requests */
-        for (i = 0; i < bsz; i++) {
-            if ((bufs[i] = rte_pktmbuf_alloc(pool)) == NULL) {
-                break;
-            }
-        }
-        n = i;
-
-        for (i = 0; i < n; i++) {
-            pkt_ptr = rte_pktmbuf_append(bufs[i], pkt_size(myarg->type));
-            pkt_header_build(pkt_ptr, myarg->src_id, myarg->des_id, 
-                    myarg->type, queue);
-            pkt_set_attribute(bufs[i]);
-            pkt_client_data_build(pkt_ptr, myarg->type);
-        }
-
-        i = rte_eth_tx_burst(myport, queue, bufs, n);
-        /* free non-sent buffers */
-        for (; i < n; i++) {
-            rte_pktmbuf_free(bufs[i]);
         }
 
         gettimeofday(&end, NULL);
@@ -250,7 +253,7 @@ main(int argc, char **argv)
     volatile enum benchmark_phase phase;
     struct settings mysettings = {
         .warmup_time = 5,
-        .run_time = 20,
+        .run_time = 60,
         .cooldown_time = 5,
     };
 
@@ -274,6 +277,7 @@ main(int argc, char **argv)
         printf("\t3 -> hippopotamus\n");
         printf("\t4 -> dikdik\n");
         printf("\t5 -> fossa\n");
+        printf("\t6 -> quagga (LiquidIO)\n");
         rte_exit(EXIT_FAILURE, "Error: invalid arguments\n");
     }
 
@@ -286,7 +290,7 @@ main(int argc, char **argv)
         largs[i].type = atoi(argv[1]);
         largs[i].des_id = atoi(argv[2]);
     }
-    port_init(largs, threadnum);
+    ports_init(largs, threadnum);
 
     /* Start applications */
     printf("Starting Workers\n");
@@ -320,6 +324,9 @@ main(int argc, char **argv)
     printf("Throughput is %lf reqs/s\n", (tot_proc_pkts + 0.0) / 
             (mysettings.run_time + 0.0));
 
+    for (i = 0; i < threadnum; i++) {
+        free(largs->src_id);
+    }
     free(largs);
 	return 0;
 }
