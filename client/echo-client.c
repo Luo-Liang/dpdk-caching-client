@@ -253,7 +253,7 @@ main(int argc, char **argv)
     volatile enum benchmark_phase phase;
     struct settings mysettings = {
         .warmup_time = 5,
-        .run_time = 60,
+        .run_time = 10,
         .cooldown_time = 5,
     };
 
@@ -285,6 +285,8 @@ main(int argc, char **argv)
         printf("\t11 -> e3server12\n");
         printf("\t12 -> dikdik1\n");
         printf("\t13 -> dikdik2\n");
+        printf("\t14 -> fossa1\n");
+        printf("\t15 -> fossa2\n");
         rte_exit(EXIT_FAILURE, "Error: invalid arguments\n");
     }
 
