@@ -271,13 +271,20 @@ main(int argc, char **argv)
         printf("Packet Type:\n");
         printf("\t0 -> ECHO\n");
         printf("Destination ID:\n");
-        printf("\t0 -> nyala\n");
-        printf("\t1 -> okapi\n");
-        printf("\t2 -> guanaco\n");
-        printf("\t3 -> hippopotamus\n");
-        printf("\t4 -> dikdik\n");
-        printf("\t5 -> fossa\n");
-        printf("\t6 -> quagga (LiquidIO)\n");
+        printf("\t0 -> e3server1\n");
+        printf("\t1 -> e3server2\n");
+        printf("\t2 -> e3server3\n");
+        printf("\t3 -> e3server4\n");
+        printf("\t4 -> e3server5\n");
+        printf("\t5 -> e3server6\n");
+        printf("\t6 -> e3server7\n");
+        printf("\t7 -> e3server8\n");
+        printf("\t8 -> e3server9\n");
+        printf("\t9 -> e3server10\n");
+        printf("\t10 -> e3server11\n");
+        printf("\t11 -> e3server12\n");
+        printf("\t12 -> dikdik1\n");
+        printf("\t13 -> dikdik2\n");
         rte_exit(EXIT_FAILURE, "Error: invalid arguments\n");
     }
 
