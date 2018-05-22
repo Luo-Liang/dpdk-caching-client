@@ -283,10 +283,18 @@ main(int argc, char **argv)
         printf("\t9 -> e3server10\n");
         printf("\t10 -> e3server11\n");
         printf("\t11 -> e3server12\n");
-        printf("\t12 -> dikdik1\n");
-        printf("\t13 -> dikdik2\n");
-        printf("\t14 -> fossa1\n");
-        printf("\t15 -> fossa2\n");
+        printf("\t12 -> dikdik-eth0\n");
+        printf("\t13 -> dikdik-eth1\n");
+        printf("\t14 -> fossa-eth0\n");
+        printf("\t15 -> fossa-eth1\n");
+        printf("\t16 -> guanaco-eth0\n");
+        printf("\t17 -> guanaco-eth1\n");
+        printf("\t18 -> hippopotamus-eth0\n");
+        printf("\t19 -> hippopotamus-eth1\n");
+        printf("\t20 -> nyala-eth0\n");
+        printf("\t21 -> nyala-eth1\n");
+        printf("\t22 -> kudu-eth0\n");
+        printf("\t23 -> kudu-eth1\n");
         rte_exit(EXIT_FAILURE, "Error: invalid arguments\n");
     }
 
