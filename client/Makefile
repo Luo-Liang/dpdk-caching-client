@@ -33,6 +33,9 @@ ifeq ($(RTE_SDK),)
 $(error "Please define RTE_SDK environment variable")
 endif
 
+
+CC=g++
+
 # Default target, can be overriden by command line or environment
 RTE_TARGET ?= x86_64-native-linuxapp-gcc
 
@@ -43,7 +46,8 @@ APP = echo-client
 
 # all source are stored in SRCS-y
 SRCS-y := echo-client.c ../cluster-cfg/cluster-cfg.c pkt-utils.c
-
+CXXFLAGS += -std=gnu++11 
+LDFLAGS += -lstdc++
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 

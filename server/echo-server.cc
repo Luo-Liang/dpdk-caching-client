@@ -64,6 +64,7 @@ struct lcore_args {
     uint8_t tid;
     volatile enum benchmark_phase *phase;
     struct rte_mempool *pool;
+    char* ifid;
 } __attribute__((packed));
 
 struct settings{
@@ -94,14 +95,27 @@ port_init(struct lcore_args *largs,
           uint8_t threadnum)
 {
     struct rte_eth_conf port_conf = port_conf_default;
-    uint8_t q, rx_rings, tx_rings, nb_ports;
+    uint8_t q, rx_rings, tx_rings, numports;
     int retval, i;
     char bufpool_name[32];
     struct ether_addr myaddr;
     uint16_t port;
 
-    nb_ports = rte_eth_dev_count();
-    printf("Number of ports of the server is %"PRIu8 "\n", nb_ports);
+    numports = rte_eth_dev_count_avail();
+    printf("Number of ports of the server is %"PRIu8 "\n", numports);
+
+    for(i = 0; i < numports; i++)
+    {
+        struct rte_eth_dev_info redi;
+        rte_eth_dev_info_get(i, &redi);
+        printf("finding device: %s\n", redi.device->name);
+        if(strcmp(redi.device->name, largs->ifid) == 0)
+        {
+            printf("found device %s\n", largs->ifid);
+            port = i;
+            break;
+        }
+    }
 
     for (i = 0; i < threadnum; i++) {
         largs[i].tid = i;
@@ -179,7 +193,7 @@ lcore_execute(__attribute__((unused)) void *arg)
     myarg = (struct lcore_args *)arg;
     queue = myarg->tid;
     bsz = BATCH_SIZE;
-    nb_ports = rte_eth_dev_count();
+    nb_ports = rte_eth_dev_count_avail();
 
     printf("Server worker %"PRIu8 " started\n", myarg->tid);
 
@@ -265,10 +279,12 @@ main(int argc, char **argv)
     argv += ret;
 
     /* Initialize application args */
-    if (argc != 2) {
+    if (argc != 3) {
         printf("Usage: %s <server type>\n", argv[0]);
         printf("Server Type:\n");
         printf("\t0 -> ECHO server\n");
+        printf("Interface identifier.\n");
+        printf("Specify a list of interfaces separated by comma.\n");
         rte_exit(EXIT_FAILURE, "Error: invalid arguments\n");
     }
 

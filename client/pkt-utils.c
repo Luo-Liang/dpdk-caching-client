@@ -84,7 +84,7 @@ pkt_header_build(char *pkt_ptr,
     myhdr->ip.hdr_checksum = 0;
     myhdr->ip.src_addr = ip_2_uint32(mysrc->ip);
     myhdr->ip.dst_addr = ip_2_uint32(mydes->ip);
-
+    printf("building a udp packet from ip = %d.%d.%d.%d to %d.%d.%d.%d\n", mysrc->ip[0], mysrc->ip[1], mysrc->ip[2], mysrc->ip[3], mydes->ip[0], mydes->ip[1], mydes->ip[2], mydes->ip[3]); 
     // UDP header
     myhdr->udp.src_port = UDP_SRC_PORT + tid;
     myhdr->udp.dst_port = UDP_DES_PORT;

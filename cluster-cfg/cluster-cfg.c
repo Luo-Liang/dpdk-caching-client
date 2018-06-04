@@ -149,6 +149,28 @@ struct endhost cluster[] = {
         .mac = {0x3c, 0xfd, 0xfe, 0xaa, 0xde, 0xd1},
         .ip = {0x0a, 0x64, 0x14, 0x0c}
     },
+    //these are ip ending 172-31-13-4
+    { //ec2 - 1
+      .id = 24,
+      .mac = {0x0a, 0x5d, 0x09, 0x8f, 0xbe, 0x18},
+      .ip = {172, 31, 12, 72}
+    },
+
+    {
+      //  Link encap:Ethernet  HWaddr 0a:2d:c0:50:cb:bc
+      //inet addr:172.31.5.23  Bcast:172.31.15.255  Mask:255.255.240.0
+      
+      .id = 25,
+      .mac = {0x0a, 0x2d, 0xc0, 0x50, 0xcb, 0xbc},
+      .ip = {172,31,5,23}
+    },
+
+    { //ec2 - 2
+      .id = 26,
+      .mac = { 0x0a,0xe1,0x4b,0x05,0x3d,0xfc},
+      .ip = {172, 31, 2, 61}
+    }
+    
 };
 
     int

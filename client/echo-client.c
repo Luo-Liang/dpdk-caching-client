@@ -47,6 +47,7 @@
 #include <rte_lcore.h>
 #include <rte_debug.h>
 #include <rte_ethdev.h>
+#include <vector>
 
 #include "../cluster-cfg/cluster-cfg.h"
 #include "pkt-utils.h"
@@ -103,7 +104,7 @@ ports_init(struct lcore_args *largs,
     struct ether_addr myaddr;
     uint16_t port;
 
-    nb_ports = rte_eth_dev_count();
+    nb_ports = rte_eth_dev_count_avail();
     printf("Number of ports of the server is %"PRIu8 "\n", nb_ports);
 
     for (i = 0; i < threadnum; i++) {
@@ -181,7 +182,7 @@ lcore_execute(__attribute__((unused)) void *arg)
     pool = myarg->pool;
     phase = myarg->phase;
     bsz = BATCH_SIZE;
-    nb_ports = rte_eth_dev_count();
+    nb_ports = rte_eth_dev_count_avail();
 
     do {
         gettimeofday(&start, NULL);
