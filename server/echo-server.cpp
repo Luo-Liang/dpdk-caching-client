@@ -158,7 +158,7 @@ port_init(struct lcore_args *largs,
                                                 RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
         if (largs[i].pool == NULL)
         {
-            rte_exit(EXIT_FAILURE, "Error: rte_pktmbuf_pool_create failed\n");
+            rte_exit(EXIT_FAILURE, "Error: rte_pktmbuf_pool_create failed %d\n", rte_errno);
         }
         largs[i].src_id = (int *)malloc(sizeof(int) * nb_ports);
         for (port = 0; port < nb_ports; port++)
