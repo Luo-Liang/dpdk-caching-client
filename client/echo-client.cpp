@@ -89,6 +89,7 @@ ports_init(struct lcore_args *largs,
           uint8_t threadnum)
 {
     rte_eth_conf port_conf_default;
+    memset(&port_conf_default, 0, sizeof(rte_eth_conf));
     port_conf_default.rxmode.mq_mode = ETH_MQ_RX_RSS;
     port_conf_default.txmode.mq_mode = ETH_MQ_TX_NONE;
     struct rte_eth_conf port_conf = port_conf_default;
