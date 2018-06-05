@@ -34,18 +34,24 @@ $(error "Please define RTE_SDK environment variable")
 endif
 
 
-CC=g++
+CC = g++
+#SRCS-y := ./echo-client.cpp ../cluster-cfg/cluster-cfg.cpp ./pkt-utils.cpp
+#mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
+current_dir = $(strip $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST)))))
+$(info VAR="$(current_dir)")
+
+#current_dir = $(shell pwd)/../
+# all source are stored in SRCS-y
+SRCS-y := $(current_dir)/echo-client.cpp $(current_dir)/../cluster-cfg/cluster-cfg.cpp $(current_dir)/pkt-utils.cpp
 
 # Default target, can be overriden by command line or environment
 RTE_TARGET ?= x86_64-native-linuxapp-gcc
+
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
 # binary name
 APP = echo-client
-
-# all source are stored in SRCS-y
-SRCS-y := echo-client.c ../cluster-cfg/cluster-cfg.c pkt-utils.c
 CXXFLAGS += -std=gnu++11 
 LDFLAGS += -lstdc++
 CFLAGS += -O3

@@ -31,6 +31,9 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#define __STDC_FORMAT_MACROS 1
+
+
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -47,6 +50,7 @@
 #include <rte_lcore.h>
 #include <rte_debug.h>
 #include <rte_ethdev.h>
+#include <vector>
 
 #include "../cluster-cfg/cluster-cfg.h"
 #include "pkt-utils.h"
@@ -55,8 +59,14 @@
 #define MBUF_CACHE_SIZE 250
 #define RX_RING_SIZE 512
 #define TX_RING_SIZE 512
-#define BATCH_SIZE 32
-//#define PERF_DEBUG
+#define BATCH_SIZE 36
+
+enum benchmark_phase {
+    BENCHMARK_WARMUP,
+    BENCHMARK_RUNNING,
+    BENCHMARK_COOLDOWN,
+    BENCHMARK_DONE,
+} __attribute__((aligned(64)));
 
 struct lcore_args {
     int *src_id, des_id;
@@ -64,7 +74,6 @@ struct lcore_args {
     uint8_t tid;
     volatile enum benchmark_phase *phase;
     struct rte_mempool *pool;
-    char* ifid;
 } __attribute__((packed));
 
 struct settings{
@@ -73,56 +82,31 @@ struct settings{
     uint32_t cooldown_time;
 } __attribute__((packed));
 
-static const struct rte_eth_conf port_conf_default = {
-    .rxmode = { 
-        .mq_mode = ETH_MQ_RX_RSS,
-    },
-    .txmode = {
-        .mq_mode = ETH_MQ_TX_NONE,
-    },
-    .rx_adv_conf = {
-        .rss_conf = {
-            .rss_hf = ETH_RSS_NONFRAG_IPV4_UDP,
-        },
-    },
-    .fdir_conf = {
-        .mode = RTE_FDIR_MODE_NONE,
-    },
-};
+uint64_t tot_proc_pkts = 0, tot_elapsed = 0;
 
 static inline int
-port_init(struct lcore_args *largs, 
+ports_init(struct lcore_args *largs, 
           uint8_t threadnum)
 {
+    rte_eth_conf port_conf_default;
+    port_conf_default.rxmode.mq_mode = ETH_MQ_RX_RSS;
+    port_conf_default.txmode.mq_mode = ETH_MQ_TX_NONE;
     struct rte_eth_conf port_conf = port_conf_default;
-    uint8_t q, rx_rings, tx_rings, numports;
+    uint8_t q, rx_rings, tx_rings, nb_ports;
     int retval, i;
     char bufpool_name[32];
     struct ether_addr myaddr;
     uint16_t port;
 
-    numports = rte_eth_dev_count_avail();
-    printf("Number of ports of the server is %"PRIu8 "\n", numports);
-
-    for(i = 0; i < numports; i++)
-    {
-        struct rte_eth_dev_info redi;
-        rte_eth_dev_info_get(i, &redi);
-        printf("finding device: %s\n", redi.device->name);
-        if(strcmp(redi.device->name, largs->ifid) == 0)
-        {
-            printf("found device %s\n", largs->ifid);
-            port = i;
-            break;
-        }
-    }
+    nb_ports = rte_eth_dev_count_avail();
+    printf("Number of ports of the server is %"PRIu8 "\n", nb_ports);
 
     for (i = 0; i < threadnum; i++) {
         largs[i].tid = i;
         sprintf(bufpool_name, "bufpool_%d", i);
         largs[i].pool = rte_pktmbuf_pool_create(bufpool_name,
-                    NUM_MBUFS * threadnum, MBUF_CACHE_SIZE, 0,
-                    RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+                NUM_MBUFS * threadnum, MBUF_CACHE_SIZE, 0,
+                RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
         if (largs[i].pool == NULL) {
             rte_exit(EXIT_FAILURE, "Error: rte_pktmbuf_pool_create failed\n");
         }
@@ -179,85 +163,77 @@ lcore_execute(__attribute__((unused)) void *arg)
     int n;
     struct lcore_args *myarg;
     uint8_t queue;
+    struct rte_mempool *pool;
+    volatile enum benchmark_phase *phase;
     struct rte_mbuf *bufs[BATCH_SIZE];
-    struct rte_mbuf *response[BATCH_SIZE];
-    int drops[BATCH_SIZE];
-    uint16_t bsz, i, j, port, nb_ports;
-
-#ifdef PERF_DEBUG
+    uint16_t bsz, i, port, nb_ports;
+    char *pkt_ptr;
     struct timeval start, end;
-    static unsigned long long send_elapsed = 0, send_cnt = 0;
-    static unsigned long long recv_elapsed = 0, recv_cnt = 0;
-#endif
+    uint64_t elapsed;
 
     myarg = (struct lcore_args *)arg;
     queue = myarg->tid;
+    pool = myarg->pool;
+    phase = myarg->phase;
     bsz = BATCH_SIZE;
     nb_ports = rte_eth_dev_count_avail();
 
-    printf("Server worker %"PRIu8 " started\n", myarg->tid);
-
     do {
-#ifdef PERF_DEBUG
         gettimeofday(&start, NULL);
-#endif 
 
         for (port = 0; port < nb_ports; port++) {
-            /* Receive and process requests */
-            if ((n = rte_eth_rx_burst(port, queue, bufs, bsz)) < 0) {
-                rte_exit(EXIT_FAILURE, "Error: rte_eth_rx_burst failed\n");
-            }
-#ifdef PERF_DEBUG
-            gettimeofday(&end, NULL);
-            recv_elapsed += ((end.tv_sec * 1000000 + end.tv_usec) -
-                    (start.tv_sec * 1000000 + start.tv_usec));
-            if ((!(recv_cnt % 1000000)) && (recv_cnt != 0) 
-                    && (recv_cnt < 10000000)) {
-                printf("recv time %lf\n", 
-                        (recv_elapsed + 0.0)/(recv_cnt + 0.0));
-            }
-#endif
+            /* Receive and process responses */
+            do {
+                if ((n = rte_eth_rx_burst(port, queue, bufs, bsz)) < 0) {
+                    rte_exit(EXIT_FAILURE, "Error: rte_eth_rx_burst failed\n");
+                }
 
-            for (i = 0; i < n; i++) {
-                drops[i] = pkt_server_process(bufs[i], myarg->type);
-            }
+                for (i = 0; i < n; i++) {
+                    if ((*phase == BENCHMARK_RUNNING) && 
+                            pkt_client_process(bufs[i], myarg->type)) {
+                        __sync_fetch_and_add(&tot_proc_pkts, 1);
+                    }
+                }
 
-            for (i = 0, j = 0; i < n; i++) {
-                if (drops[i]) {
+                for (i = 0; i < n; i++) {
                     rte_pktmbuf_free(bufs[i]);
-                } else {
-                    response[j++] = bufs[i];
+                }
 
-#ifdef PERF_DEBUG
-                    recv_cnt++;
-#endif
+            } while (n == bsz); // More packets in the RX queue
 
+            /* Prepare and send requests */
+            for (i = 0; i < bsz; i++) {
+                if ((bufs[i] = rte_pktmbuf_alloc(pool)) == NULL) {
+                    break;
                 }
             }
+            n = i;
 
-#ifdef PERF_DEBUG
-            gettimeofday(&start, NULL);
-#endif
+            for (i = 0; i < n; i++) {
+                pkt_ptr = rte_pktmbuf_append(bufs[i], pkt_size(myarg->type));
+                pkt_header_build(pkt_ptr, myarg->src_id[port], myarg->des_id, 
+                        myarg->type, queue);
+                pkt_set_attribute(bufs[i]);
+                pkt_client_data_build(pkt_ptr, myarg->type);
+            }
 
-            i = 0;
-            while (i < j) {
-                n = rte_eth_tx_burst(port, queue, response + i, j - i);
-                i += n;
+            i = rte_eth_tx_burst(port, queue, bufs, n);
+            /* free non-sent buffers */
+            for (; i < n; i++) {
+                rte_pktmbuf_free(bufs[i]);
             }
         }
 
-#ifdef PERF_DEBUG
         gettimeofday(&end, NULL);
-        send_elapsed += ((end.tv_sec * 1000000 + end.tv_usec) -
-                         (start.tv_sec * 1000000 + start.tv_usec));
-        send_cnt += j;
-        if ((!(send_cnt % 1000000)) && (send_cnt != 0) && 
-                (send_cnt < 10000000)) {
-            printf("send time is %lf\n",
-                    (send_elapsed + 0.0)/(recv_cnt + 0.0));
+        elapsed = (end.tv_sec - start.tv_sec) * 1000000 + 
+            (end.tv_usec - start.tv_usec);
+
+        if (*phase == BENCHMARK_RUNNING) {
+            tot_elapsed += elapsed;
         }
-#endif
-    } while (1);
+
+    } while (*phase != BENCHMARK_DONE);
+    printf("worker %"PRIu8 " done\n", myarg->tid);
 
 	return 0;
 }
@@ -265,10 +241,17 @@ lcore_execute(__attribute__((unused)) void *arg)
 int
 main(int argc, char **argv)
 {
+        
 	int ret, i;
 	unsigned lcore_id;
     uint8_t threadnum;
     struct lcore_args *largs;
+    volatile enum benchmark_phase phase;
+    struct settings mysettings = {
+        .warmup_time = 5,
+        .run_time = 10,
+        .cooldown_time = 5,
+    };
 
     /* Initialize the Environment Abstraction Layer (EAL) */
 	ret = rte_eal_init(argc, argv);
@@ -280,22 +263,55 @@ main(int argc, char **argv)
 
     /* Initialize application args */
     if (argc != 3) {
-        printf("Usage: %s <server type>\n", argv[0]);
-        printf("Server Type:\n");
-        printf("\t0 -> ECHO server\n");
-        printf("Interface identifier.\n");
-        printf("Specify a list of interfaces separated by comma.\n");
+        printf("Usage: %s <type> <dest ID>\n", argv[0]);
+        printf("Packet Type:\n");
+        printf("\t0 -> ECHO\n");
+        printf("Destination ID:\n");
+        printf("\t0 -> e3server1\n");
+        printf("\t1 -> e3server2\n");
+        printf("\t2 -> e3server3\n");
+        printf("\t3 -> e3server4\n");
+        printf("\t4 -> e3server5\n");
+        printf("\t5 -> e3server6\n");
+        printf("\t6 -> e3server7\n");
+        printf("\t7 -> e3server8\n");
+        printf("\t8 -> e3server9\n");
+        printf("\t9 -> e3server10\n");
+        printf("\t10 -> e3server11\n");
+        printf("\t11 -> e3server12\n");
+        printf("\t12 -> dikdik-eth0\n");
+        printf("\t13 -> dikdik-eth1\n");
+        printf("\t14 -> fossa-eth0\n");
+        printf("\t15 -> fossa-eth1\n");
+        printf("\t16 -> guanaco-eth0\n");
+        printf("\t17 -> guanaco-eth1\n");
+        printf("\t18 -> hippopotamus-eth0\n");
+        printf("\t19 -> hippopotamus-eth1\n");
+        printf("\t20 -> nyala-eth0\n");
+        printf("\t21 -> nyala-eth1\n");
+        printf("\t22 -> kudu-eth0\n");
+        printf("\t23 -> kudu-eth1\n");
         rte_exit(EXIT_FAILURE, "Error: invalid arguments\n");
     }
 
     /* Initialize NIC ports */
     threadnum = rte_lcore_count() - 1;
-    largs = calloc(threadnum, sizeof(*largs));
+    largs = (lcore_args*)calloc(threadnum, sizeof(*largs));
     for (i = 0; i < threadnum; i++) {
         largs[i].tid = i;
-        largs[i].type = atoi(argv[1]);
+        largs[i].phase = &phase;
+        largs[i].type = (pkt_type)atoi(argv[1]);
+        largs[i].des_id = atoi(argv[2]);
     }
-    port_init(largs, threadnum);
+    ports_init(largs, threadnum);
+
+    /* Start applications */
+    printf("Starting Workers\n");
+    phase = BENCHMARK_WARMUP;
+    if (mysettings.warmup_time) {
+        sleep(mysettings.warmup_time);
+        printf("Warmup done\n");
+    }
 
     /* call lcore_execute() on every slave lcore */
     RTE_LCORE_FOREACH_SLAVE(lcore_id) {
@@ -303,9 +319,27 @@ main(int argc, char **argv)
                 lcore_id);
     }
 
-    printf("Master core performs maintainence\n");
-	rte_eal_mp_wait_lcore();
+    phase = BENCHMARK_RUNNING;
+    sleep(mysettings.run_time);
 
+    if (mysettings.cooldown_time) {
+        printf("Starting cooldown\n");
+        phase = BENCHMARK_COOLDOWN;
+        sleep(mysettings.cooldown_time);
+    }
+
+    phase = BENCHMARK_DONE;
+    printf("Benchmark done\n");
+
+	rte_eal_mp_wait_lcore();
+    /* print status */
+    printf("Latency is %lf us\n", (tot_elapsed + 0.0) / (tot_proc_pkts + 0.0));
+    printf("Throughput is %lf reqs/s\n", (tot_proc_pkts + 0.0) / 
+            (mysettings.run_time + 0.0));
+
+    for (i = 0; i < threadnum; i++) {
+        free(largs->src_id);
+    }
     free(largs);
 	return 0;
 }

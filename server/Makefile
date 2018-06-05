@@ -29,12 +29,16 @@
 #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+current_dir = $(strip $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST)))))
+$(info VAR="$(current_dir)")
+
 ifeq ($(RTE_SDK),)
 $(error "Please define RTE_SDK environment variable")
 endif
-
+CC=g++
 # Default target, can be overriden by command line or environment
 RTE_TARGET ?= x86_64-native-linuxapp-gcc
+SRCS-y := $(current_dir)/echo-server.cpp $(current_dir)/../cluster-cfg/cluster-cfg.cpp $(current_dir)/pkt-utils.cpp
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
@@ -42,7 +46,6 @@ include $(RTE_SDK)/mk/rte.vars.mk
 APP = echo-server
 
 # all source are stored in SRCS-y
-SRCS-y := echo-server.cc ../cluster-cfg/cluster-cfg.cc pkt-utils.cc
 
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
