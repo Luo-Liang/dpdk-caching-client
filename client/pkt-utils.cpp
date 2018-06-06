@@ -28,7 +28,7 @@ struct common_hdr {
 /* Application Headers */
 //#define ECHO_PAYLOAD_LEN 1024
 //#define ECHO_PAYLOAD_LEN 64
-#define ECHO_PAYLOAD_LEN 46
+#define ECHO_PAYLOAD_LEN 0
 struct echo_hdr {
     struct common_hdr pro_hdr;
     char payload[ECHO_PAYLOAD_LEN];
@@ -133,6 +133,7 @@ pkt_header_build(char *pkt_ptr,
         UDP_HEADER_LEN;
     myhdr->udp.dgram_cksum = uhdr.uh_sum = 0;
     myhdr->udp.dgram_cksum = udp_checksum(&uhdr, myhdr->ip.src_addr, myhdr->ip.dst_addr);
+    //printf("ip checksum = %d, udp checksum = %d\n", myhdr->ip.hdr_checksum, myhdr->udp.dgram_cksum);
 }
 
 void
