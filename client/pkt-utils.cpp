@@ -122,7 +122,7 @@ pkt_header_build(char *pkt_ptr,
     myhdr->ip.time_to_live = 64;
     myhdr->ip.next_proto_id = 17;
     myhdr->ip.hdr_checksum = 0;
-    myhdr->ip.hdr_checksum = rte_ipv4_cksum(&myhdr->ip);
+    //myhdr->ip.hdr_checksum = rte_ipv4_cksum(&myhdr->ip);
     myhdr->ip.src_addr = ip_2_uint32(mysrc->ip);
     myhdr->ip.dst_addr = ip_2_uint32(mydes->ip);
     //printf("building a udp packet from ip = %d.%d.%d.%d to %d.%d.%d.%d\n", mysrc->ip[0], mysrc->ip[1], mysrc->ip[2], mysrc->ip[3], mydes->ip[0], mydes->ip[1], mydes->ip[2], mydes->ip[3]); 
@@ -132,14 +132,14 @@ pkt_header_build(char *pkt_ptr,
     myhdr->udp.dgram_len = uhdr.uh_ulen = pkt_size(type) - ETHER_HEADER_LEN - IP_HEADER_LEN - 
         UDP_HEADER_LEN;
     myhdr->udp.dgram_cksum = uhdr.uh_sum = 0;
-    myhdr->udp.dgram_cksum = udp_checksum(&uhdr, myhdr->ip.src_addr, myhdr->ip.dst_addr);
+    //myhdr->udp.dgram_cksum = udp_checksum(&uhdr, myhdr->ip.src_addr, myhdr->ip.dst_addr);
     //printf("ip checksum = %d, udp checksum = %d\n", myhdr->ip.hdr_checksum, myhdr->udp.dgram_cksum);
 }
 
 void
 pkt_set_attribute(struct rte_mbuf *buf)
 {
-    buf->ol_flags |=  PKT_TX_IPV4;// | PKT_TX_UDP_CKSUM ;//| PKT_TX_UDP_CKSUM PKT_TX_IP_CKSUM |
+  buf->ol_flags |=  PKT_TX_IPV4 | PKT_TX_UDP_CKSUM | PKT_TX_IP_CKSUM;
     buf->l2_len = sizeof(struct ether_hdr);
     buf->l3_len = sizeof(struct ipv4_hdr);
 }
