@@ -81,6 +81,7 @@ pkt_swap_address(struct common_hdr *comhdr)
 
     // Clear old checksum
     comhdr->ip.hdr_checksum = 0;
+    comhdr->ip.hdr_checksum = rte_ipv4_cksum(&comhdr->ip);
     comhdr->udp.dgram_cksum = 0;
 }
 
@@ -122,7 +123,7 @@ pkt_header_build(char *pkt_ptr,
 void
 pkt_set_attribute(struct rte_mbuf *buf)
 {
-    buf->ol_flags |= PKT_TX_IP_CKSUM | PKT_TX_IPV4;
+  buf->ol_flags |= PKT_TX_UDP_CKSUM | PKT_TX_IPV4 ; /*| PKT_TX_IP_CKSUM |  */
     buf->l2_len = sizeof(struct ether_hdr);
     buf->l3_len = sizeof(struct ipv4_hdr);
 }
