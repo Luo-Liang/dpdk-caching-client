@@ -59,7 +59,7 @@
 #define RX_RING_SIZE 512
 #define TX_RING_SIZE 512
 #define BATCH_SIZE 36
-
+#define rte_eth_dev_count_avail rte_eth_dev_count
 enum benchmark_phase
 {
     BENCHMARK_WARMUP,
@@ -93,13 +93,13 @@ ports_init(struct lcore_args *largs,
     rte_eth_conf port_conf_default;
     memset(&port_conf_default, 0, sizeof(rte_eth_conf));
     port_conf_default.rxmode.mq_mode = ETH_MQ_RX_RSS;
-    port_conf_default.rxmode.max_rx_pkt_len = ETHER_MAX_LEN;
-    port_conf_default.rxmode.split_hdr_size = 0;
-    port_conf_default.rxmode.ignore_offload_bitfield = 1;
-    port_conf_default.rxmode.offloads = (DEV_RX_OFFLOAD_CRC_STRIP | DEV_RX_OFFLOAD_CHECKSUM);
+    //port_conf_default.rxmode.max_rx_pkt_len = ETHER_MAX_LEN;
+    //port_conf_default.rxmode.split_hdr_size = 0;
+    //port_conf_default.rxmode.ignore_offload_bitfield = 1;
+    //port_conf_default.rxmode.offloads = (DEV_RX_OFFLOAD_CRC_STRIP | DEV_RX_OFFLOAD_CHECKSUM);
 
-    port_conf_default.rx_adv_conf.rss_conf.rss_key = NULL;
-    port_conf_default.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_IP;
+    //port_conf_default.rx_adv_conf.rss_conf.rss_key = NULL;
+    //port_conf_default.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_IP;
 
     port_conf_default.txmode.mq_mode = ETH_MQ_TX_NONE;
     struct rte_eth_conf port_conf = port_conf_default;
@@ -133,23 +133,23 @@ ports_init(struct lcore_args *largs,
 
     for (port = 0; port < nb_ports; port++)
     {
+        rx_rings = tx_rings = threadnum;
         retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
         if (retval != 0)
         {
-            printf("port init failed. %s.\n", rte_strerror(rte_errno));
+            printf("port init failed. %s. retval = %d\n", rte_strerror(rte_errno), retval);
             return retval;
         }
 
-        rx_rings = tx_rings = threadnum;
         rte_eth_rxconf rxqConf;
 
-        rte_eth_conf* pConf;
-        rte_eth_dev* pDev = &rte_eth_devices[port];
+        //rte_eth_conf* pConf;
+        //rte_eth_dev* pDev = &rte_eth_devices[port];
         rte_eth_dev_info devInfo;
         rte_eth_dev_info_get(port, &devInfo);                
         rxqConf = devInfo.default_rxconf;
-        pConf = &pDev->data->dev_conf;
-        rxqConf.offloads = pConf->rxmode.offloads;
+        //pConf = &pDev->data->dev_conf;
+        //rxqConf.offloads = pConf->rxmode.offloads;
         /* Configure the Ethernet device of a given port */
      
 
@@ -167,8 +167,8 @@ ports_init(struct lcore_args *largs,
 
         rte_eth_txconf txqConf;
         txqConf = devInfo.default_txconf;
-        txqConf.txq_flags = ETH_TXQ_FLAGS_IGNORE;
-        txqConf.offloads = port_conf.txmode.offloads;
+        //txqConf.txq_flags = ETH_TXQ_FLAGS_IGNORE;
+        //txqConf.offloads = port_conf.txmode.offloads;
         /* Allocate and set up TX queues for a given Ethernet port */
         for (q = 0; q < tx_rings; q++)
         {
@@ -214,7 +214,7 @@ lcore_execute(__attribute__((unused)) void *arg)
     phase = myarg->phase;
     bsz = BATCH_SIZE;
     nb_ports = rte_eth_dev_count_avail();
-
+    int pktCntr = 0;
     do
     {
         gettimeofday(&start, NULL);
@@ -254,7 +254,6 @@ lcore_execute(__attribute__((unused)) void *arg)
                 }
             }
             n = i;
-
             for (i = 0; i < n; i++)
             {
                 pkt_ptr = rte_pktmbuf_append(bufs[i], pkt_size(myarg->type));
@@ -263,8 +262,8 @@ lcore_execute(__attribute__((unused)) void *arg)
                 pkt_set_attribute(bufs[i]);
                 pkt_client_data_build(pkt_ptr, myarg->type);
             }
-
             i = rte_eth_tx_burst(port, queue, bufs, n);
+            pktCntr+=i;
             /* free non-sent buffers */
             for (; i < n; i++)
             {
@@ -282,7 +281,7 @@ lcore_execute(__attribute__((unused)) void *arg)
         }
 
     } while (*phase != BENCHMARK_DONE);
-    printf("worker %" PRIu8 " done\n", myarg->tid);
+    printf("worker %" PRIu8 " done. counter = %d\n", myarg->tid, pktCntr);
 
     return 0;
 }

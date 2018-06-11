@@ -54,7 +54,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 APP = echo-client
 CXXFLAGS += -std=gnu++11 
 LDFLAGS += -lstdc++
-CFLAGS += -O3
+CFLAGS += -O0 -g
 CFLAGS += $(WERROR_FLAGS)
 
 include $(RTE_SDK)/mk/rte.extapp.mk

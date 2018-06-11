@@ -28,7 +28,7 @@ struct common_hdr {
 /* Application Headers */
 //#define ECHO_PAYLOAD_LEN 1024
 //#define ECHO_PAYLOAD_LEN 64
-#define ECHO_PAYLOAD_LEN 0
+#define ECHO_PAYLOAD_LEN 4
 struct echo_hdr {
     struct common_hdr pro_hdr;
     char payload[ECHO_PAYLOAD_LEN];
@@ -115,22 +115,22 @@ pkt_header_build(char *pkt_ptr,
     myhdr->ether.ether_type = htons(ETHER_TYPE_IPv4);
     udphdr uhdr;
     // IP header
-    myhdr->ip.version_ihl = 4 << 4 | 5;
+    myhdr->ip.version_ihl = 0x45;
     myhdr->ip.total_length = pkt_size(type) - ETHER_HEADER_LEN;
-    myhdr->ip.packet_id = 0;
+    myhdr->ip.packet_id = (uint16_t)random();
     myhdr->ip.fragment_offset = 0;
     myhdr->ip.time_to_live = 64;
-    myhdr->ip.next_proto_id = 17;
-    myhdr->ip.hdr_checksum = 0;
-    //myhdr->ip.hdr_checksum = rte_ipv4_cksum(&myhdr->ip);
+    myhdr->ip.next_proto_id = IPPROTO_UDP;
+    //myhdr->ip.hdr_checksum = 0;
+    myhdr->ip.hdr_checksum = rte_ipv4_cksum(&myhdr->ip);
     myhdr->ip.src_addr = ip_2_uint32(mysrc->ip);
     myhdr->ip.dst_addr = ip_2_uint32(mydes->ip);
     //printf("building a udp packet from ip = %d.%d.%d.%d to %d.%d.%d.%d\n", mysrc->ip[0], mysrc->ip[1], mysrc->ip[2], mysrc->ip[3], mydes->ip[0], mydes->ip[1], mydes->ip[2], mydes->ip[3]); 
     // UDP header
     myhdr->udp.src_port = uhdr.uh_sport = UDP_SRC_PORT + tid;
     myhdr->udp.dst_port = uhdr.uh_dport = UDP_DES_PORT;
-    myhdr->udp.dgram_len = uhdr.uh_ulen = pkt_size(type) - ETHER_HEADER_LEN - IP_HEADER_LEN - 
-        UDP_HEADER_LEN;
+    myhdr->udp.dgram_len = uhdr.uh_ulen = pkt_size(type) - ETHER_HEADER_LEN - IP_HEADER_LEN;// - 
+        //UDP_HEADER_LEN;
     myhdr->udp.dgram_cksum = uhdr.uh_sum = 0;
     //myhdr->udp.dgram_cksum = udp_checksum(&uhdr, myhdr->ip.src_addr, myhdr->ip.dst_addr);
     //printf("ip checksum = %d, udp checksum = %d\n", myhdr->ip.hdr_checksum, myhdr->udp.dgram_cksum);

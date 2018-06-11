@@ -183,7 +183,7 @@ get_endhost_id (struct ether_addr addr)
             return cluster[i].id;
         }
     }
-
+    exit(-1);
     return -1;
 }
 
