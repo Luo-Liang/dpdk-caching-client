@@ -48,8 +48,8 @@
 #include <rte_debug.h>
 #include <rte_ethdev.h>
 
-#include "../cluster-cfg/cluster-cfg.h"
-#include "pkt-utils.h"
+#include "../shared/cluster-cfg.h"
+#include "../shared/pkt-utils.h"
 
 #define NUM_MBUFS 8191
 #define MBUF_CACHE_SIZE 250
@@ -57,7 +57,7 @@
 #define TX_RING_SIZE 512
 #define BATCH_SIZE 32
 //#define PERF_DEBUG
-
+#define rte_eth_dev_count_avail rte_eth_dev_count
 struct lcore_args
 {
     int *src_id, des_id;

@@ -38,7 +38,7 @@ endif
 CC=g++
 # Default target, can be overriden by command line or environment
 RTE_TARGET ?= x86_64-native-linuxapp-gcc
-SRCS-y := $(current_dir)/echo-server.cpp $(current_dir)/../shared/cluster-cfg.cpp $(current_dir)/pkt-utils.cpp
+SRCS-y := $(current_dir)/echo-server.cpp $(current_dir)/../shared/cluster-cfg.cpp $(current_dir)/../shared/pkt-utils.cpp
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
