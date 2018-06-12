@@ -46,8 +46,9 @@ include $(RTE_SDK)/mk/rte.vars.mk
 APP = echo-server
 
 # all source are stored in SRCS-y
-
-CFLAGS += -O3
-CFLAGS += $(WERROR_FLAGS)
+LDFLAGS += -lstdc++
+CXXFLAGS += -O3 -g
+CXXFLAGS += $(WERROR_FLAGS)
+CXXFLAGS += -std=gnu++11
 
 include $(RTE_SDK)/mk/rte.extapp.mk
