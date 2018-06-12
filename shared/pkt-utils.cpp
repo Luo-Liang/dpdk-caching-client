@@ -8,15 +8,16 @@
 #include <rte_udp.h>
 #include <rte_memcpy.h>
 
-#include "../cluster-cfg/cluster-cfg.h"
+#include "cluster-cfg.h"
 #include "pkt-utils.h"
+#include <string>
 
 /* Marcos */
 #define ETHER_HEADER_LEN 14
 #define IP_HEADER_LEN 20
 #define UDP_HEADER_LEN 8
-#define UDP_SRC_PORT 13253
-#define UDP_DES_PORT 13253
+#define UDP_SRC_PORT 1234
+#define UDP_DES_PORT 5678
 
 /* Common Header */
 struct common_hdr {
@@ -26,9 +27,19 @@ struct common_hdr {
 } __attribute__((packed));
 
 /* Application Headers */
-//#define ECHO_PAYLOAD_LEN 1024
-//#define ECHO_PAYLOAD_LEN 64
-#define ECHO_PAYLOAD_LEN 4
+#define ECHO_PAYLOAD_LEN 5
+std::string contents;
+
+void InitializePayloadConstants()
+{
+    if(contents.size() != 0) return;
+    std::string templatedStr = "PLINK TECHNOLOGIES";
+    for(int i = 0; i < ECHO_PAYLOAD_LEN; i++)
+    {
+        contents += templatedStr.at(i % templatedStr.size());
+    }
+}
+
 struct echo_hdr {
     struct common_hdr pro_hdr;
     char payload[ECHO_PAYLOAD_LEN];
@@ -58,45 +69,34 @@ ip_2_uint32(uint8_t ip[])
     return myip;
 }
 
-uint16_t udp_checksum(udphdr *p_udp_header, /*size_t len,*/ uint32_t src_addr, uint32_t dest_addr)
+static inline void
+pkt_swap_address(struct common_hdr *comhdr)
 {
-  uint16_t *buf = (uint16_t*)p_udp_header;
-  uint16_t *ip_src = (uint16_t*)&src_addr, *ip_dst = (uint16_t*)&dest_addr;
-  uint32_t sum;
-  size_t length = p_udp_header->uh_ulen;
-  size_t len = length;
-  // Calculate the sum
-  sum = 0;
-  while (len > 1)
-    {
-      sum += *buf++;
-      if (sum & 0x80000000)
-	sum = (sum & 0xFFFF) + (sum >> 16);
-      len -= 2;
-    }
+    uint8_t tmp_mac[ETHER_ADDR_LEN];
+    uint32_t tmp_ip;
+    uint16_t tmp_udp;
 
-  if (len & 1)
-    // Add the padding if the packet lenght is odd
-    sum += *((uint8_t*)buf);
+    // Destination addr copy
+    rte_memcpy(tmp_mac, comhdr->ether.d_addr.addr_bytes, ETHER_ADDR_LEN);
+    tmp_ip = comhdr->ip.dst_addr;
+    tmp_udp = comhdr->udp.dst_port;
 
-  // Add the pseudo-header
-  sum += *(ip_src++);
-  sum += *ip_src;
+    // SRC -> DST
+    rte_memcpy(comhdr->ether.d_addr.addr_bytes, comhdr->ether.s_addr.addr_bytes,
+            ETHER_ADDR_LEN);
+    comhdr->ip.dst_addr = comhdr->ip.src_addr;
+    comhdr->udp.dst_port = comhdr->udp.src_port;
+    
+    // DST -> SRC
+    rte_memcpy(comhdr->ether.s_addr.addr_bytes, tmp_mac, ETHER_ADDR_LEN);
+    comhdr->ip.src_addr = tmp_ip;
+    comhdr->udp.src_port = tmp_udp;
 
-  sum += *(ip_dst++);
-  sum += *ip_dst;
-
-  sum += htons(IPPROTO_UDP);
-  sum += htons(length);
-
-  // Add the carries
-  while (sum >> 16)
-    sum = (sum & 0xFFFF) + (sum >> 16);
-
-  // Return the one's complement of sum
-  return (uint16_t)~sum;
+    // Clear old checksum
+    comhdr->ip.hdr_checksum = 0;
+    comhdr->ip.hdr_checksum = rte_ipv4_cksum(&comhdr->ip);
+    comhdr->udp.dgram_cksum = 0;
 }
-
 
 void
 pkt_header_build(char *pkt_ptr,
@@ -116,22 +116,22 @@ pkt_header_build(char *pkt_ptr,
     udphdr uhdr;
     // IP header
     myhdr->ip.version_ihl = 0x45;
-    myhdr->ip.total_length = pkt_size(type) - ETHER_HEADER_LEN;
-    myhdr->ip.packet_id = (uint16_t)random();
+    myhdr->ip.total_length = htons(pkt_size(type) - ETHER_HEADER_LEN);
+    myhdr->ip.packet_id = htons(44761);
     myhdr->ip.fragment_offset = 0;
     myhdr->ip.time_to_live = 64;
     myhdr->ip.next_proto_id = IPPROTO_UDP;
     //myhdr->ip.hdr_checksum = 0;
-    myhdr->ip.hdr_checksum = rte_ipv4_cksum(&myhdr->ip);
+    myhdr->ip.hdr_checksum = 0;// htons(0xa122);//rte_ipv4_cksum(&myhdr->ip);
     myhdr->ip.src_addr = ip_2_uint32(mysrc->ip);
     myhdr->ip.dst_addr = ip_2_uint32(mydes->ip);
     //printf("building a udp packet from ip = %d.%d.%d.%d to %d.%d.%d.%d\n", mysrc->ip[0], mysrc->ip[1], mysrc->ip[2], mysrc->ip[3], mydes->ip[0], mydes->ip[1], mydes->ip[2], mydes->ip[3]); 
     // UDP header
-    myhdr->udp.src_port = uhdr.uh_sport = UDP_SRC_PORT + tid;
-    myhdr->udp.dst_port = uhdr.uh_dport = UDP_DES_PORT;
-    myhdr->udp.dgram_len = uhdr.uh_ulen = pkt_size(type) - ETHER_HEADER_LEN - IP_HEADER_LEN;// - 
+    myhdr->udp.src_port = uhdr.uh_sport = htons(UDP_SRC_PORT + tid);
+    myhdr->udp.dst_port = uhdr.uh_dport = htons(UDP_DES_PORT);
+    myhdr->udp.dgram_len = uhdr.uh_ulen = htons(pkt_size(type) - ETHER_HEADER_LEN - IP_HEADER_LEN);// - 
         //UDP_HEADER_LEN;
-    myhdr->udp.dgram_cksum = uhdr.uh_sum = 0;
+    myhdr->udp.dgram_cksum = 0;// uhdr.uh_sum = htons(0xba29);
     //myhdr->udp.dgram_cksum = udp_checksum(&uhdr, myhdr->ip.src_addr, myhdr->ip.dst_addr);
     //printf("ip checksum = %d, udp checksum = %d\n", myhdr->ip.hdr_checksum, myhdr->udp.dgram_cksum);
 }
@@ -144,13 +144,14 @@ pkt_set_attribute(struct rte_mbuf *buf)
     buf->l3_len = sizeof(struct ipv4_hdr);
 }
 
+
 void
 pkt_client_data_build(char *pkt_ptr,
                       enum pkt_type type)
 {
     if (type == ECHO) {
         struct echo_hdr *mypkt = (struct echo_hdr *)pkt_ptr;
-        rte_memcpy(mypkt->payload, "ECHO", 4);
+        rte_memcpy(mypkt->payload, contents.c_str(), ECHO_PAYLOAD_LEN);
     } else {
         // do nothing
     }
@@ -165,7 +166,7 @@ int pkt_client_process(struct rte_mbuf *buf,
         struct echo_hdr *mypkt;
 
         mypkt = rte_pktmbuf_mtod(buf, struct echo_hdr *);
-        if (!memcmp(mypkt->payload, "ACKD", 4)) {
+        if (!memcmp(mypkt->payload, contents.c_str(), ECHO_PAYLOAD_LEN)) {
             ret = 1;
         }
     } else {
@@ -173,4 +174,45 @@ int pkt_client_process(struct rte_mbuf *buf,
     }
 
     return ret;
+}
+
+static void
+pkt_server_data_build(char *payload,
+                      enum pkt_type type)
+{
+    if (type == ECHO) {
+        rte_memcpy(payload, contents.c_str(), ECHO_PAYLOAD_LEN);
+    } else {
+        // do nothing
+    }
+}
+
+int
+pkt_server_process(struct rte_mbuf *buf,
+                    enum pkt_type type)
+{
+    int ret = 1;
+
+    if (type == ECHO) {
+        struct echo_hdr *mypkt;
+
+        mypkt = rte_pktmbuf_mtod(buf, struct echo_hdr *);
+        if (!memcmp(mypkt->payload, contents.c_str(), ECHO_PAYLOAD_LEN)) {
+            pkt_swap_address(&mypkt->pro_hdr);
+            pkt_server_data_build(mypkt->payload, type);
+
+            ret = 0;
+        }
+    } else {
+        // do nothing
+    }
+
+    return ret;
+}
+
+void 
+pkt_dump(struct rte_mbuf *buf)
+{
+    printf("Packet info:\n");
+    rte_pktmbuf_dump(stdout, buf, rte_pktmbuf_pkt_len(buf));
 }

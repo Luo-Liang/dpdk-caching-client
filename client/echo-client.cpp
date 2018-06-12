@@ -51,8 +51,8 @@
 #include <rte_ethdev.h>
 #include <vector>
 
-#include "../cluster-cfg/cluster-cfg.h"
-#include "pkt-utils.h"
+#include "../shared/cluster-cfg.h"
+#include "../shared/pkt-utils.h"
 
 #define NUM_MBUFS 8191
 #define MBUF_CACHE_SIZE 250
@@ -85,6 +85,12 @@ struct settings
 } __attribute__((packed));
 
 uint64_t tot_proc_pkts = 0, tot_elapsed = 0;
+/*static inline void 
+pkt_dump(struct rte_mbuf *buf)
+{
+    printf("Packet info:\n");
+    rte_pktmbuf_dump(stdout, buf, rte_pktmbuf_pkt_len(buf));
+}*/
 
 static inline int
 ports_init(struct lcore_args *largs,
@@ -194,6 +200,7 @@ ports_init(struct lcore_args *largs,
     return 0;
 }
 
+
 static int
 lcore_execute(__attribute__((unused)) void *arg)
 {
@@ -261,6 +268,7 @@ lcore_execute(__attribute__((unused)) void *arg)
                                  myarg->type, queue);
                 pkt_set_attribute(bufs[i]);
                 pkt_client_data_build(pkt_ptr, myarg->type);
+                //pkt_dump(bufs[i]);
             }
             i = rte_eth_tx_burst(port, queue, bufs, n);
             pktCntr+=i;

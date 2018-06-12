@@ -42,7 +42,7 @@ $(info VAR="$(current_dir)")
 
 #current_dir = $(shell pwd)/../
 # all source are stored in SRCS-y
-SRCS-y := $(current_dir)/echo-client.cpp $(current_dir)/../cluster-cfg/cluster-cfg.cpp $(current_dir)/pkt-utils.cpp
+SRCS-y := $(current_dir)/echo-client.cpp $(current_dir)/../shared/cluster-cfg.cpp $(current_dir)/../shared/pkt-utils.cpp
 
 # Default target, can be overriden by command line or environment
 RTE_TARGET ?= x86_64-native-linuxapp-gcc
