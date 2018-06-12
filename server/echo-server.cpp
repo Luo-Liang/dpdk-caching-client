@@ -339,7 +339,7 @@ int main(int argc, char **argv)
         //printf("Specify a list of interfaces separated by comma.\n");
         rte_exit(EXIT_FAILURE, "Error: invalid arguments\n");
     }
-
+    InitializePayloadConstants();
     /* Initialize NIC ports */
     threadnum = rte_lcore_count() - 1;
     largs = (lcore_args*)calloc(threadnum, sizeof(*largs));
