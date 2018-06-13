@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 #include <rte_mbuf.h>
+#include <string>
 
 enum pkt_type {
     ECHO,
@@ -16,6 +17,18 @@ struct udphdr {
   u_short uh_dport;/* destination port */
   short uh_ulen;/* udp length */
   u_short uh_sum;/* udp checksum */
+};
+
+struct MACAddress
+{
+  uint32_t Bytes[6];
+  static MACAddress FromString(std::string hex);
+};
+
+struct IP
+{
+  uint32_t Bytes[4];
+  static IP FromString(std::string ip);
 };
 
 

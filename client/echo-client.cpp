@@ -50,7 +50,6 @@
 #include <rte_debug.h>
 #include <rte_ethdev.h>
 #include <vector>
-
 #include "../shared/cluster-cfg.h"
 #include "../shared/pkt-utils.h"
 
@@ -70,7 +69,8 @@ enum benchmark_phase
 
 struct lcore_args
 {
-    int *src_id, des_id;
+    std::vector<MACAddress> srcMacs;
+    std::vector<IP> srcIPs;
     enum pkt_type type;
     uint8_t tid;
     volatile enum benchmark_phase *phase;
@@ -129,7 +129,9 @@ ports_init(struct lcore_args *largs,
         {
             rte_exit(EXIT_FAILURE, "Error: rte_pktmbuf_pool_create failed\n");
         }
-        largs[i].src_id = (int *)malloc(sizeof(int) * nb_ports);
+        //largs[i].src_id = (int *)malloc(sizeof(int) * nb_ports);
+        largs[i].srcIPs.resize(nb_ports);
+        largs[i].srcMacs.resize(nb_ports);
         for (port = 0; port < nb_ports; port++)
         {
             rte_eth_macaddr_get(port, &myaddr);
@@ -318,36 +320,9 @@ int main(int argc, char **argv)
     argv += ret;
 
     /* Initialize application args */
-    if (argc != 3)
+    if (argc != 4)
     {
-        printf("Usage: %s <type> <dest ID>\n", argv[0]);
-        printf("Packet Type:\n");
-        printf("\t0 -> ECHO\n");
-        printf("Destination ID:\n");
-        printf("\t0 -> e3server1\n");
-        printf("\t1 -> e3server2\n");
-        printf("\t2 -> e3server3\n");
-        printf("\t3 -> e3server4\n");
-        printf("\t4 -> e3server5\n");
-        printf("\t5 -> e3server6\n");
-        printf("\t6 -> e3server7\n");
-        printf("\t7 -> e3server8\n");
-        printf("\t8 -> e3server9\n");
-        printf("\t9 -> e3server10\n");
-        printf("\t10 -> e3server11\n");
-        printf("\t11 -> e3server12\n");
-        printf("\t12 -> dikdik-eth0\n");
-        printf("\t13 -> dikdik-eth1\n");
-        printf("\t14 -> fossa-eth0\n");
-        printf("\t15 -> fossa-eth1\n");
-        printf("\t16 -> guanaco-eth0\n");
-        printf("\t17 -> guanaco-eth1\n");
-        printf("\t18 -> hippopotamus-eth0\n");
-        printf("\t19 -> hippopotamus-eth1\n");
-        printf("\t20 -> nyala-eth0\n");
-        printf("\t21 -> nyala-eth1\n");
-        printf("\t22 -> kudu-eth0\n");
-        printf("\t23 -> kudu-eth1\n");
+        printf("Usage: %s <type> <dest IP> <dest MAC>\n", argv[0]);
         rte_exit(EXIT_FAILURE, "Error: invalid arguments\n");
     }
     InitializePayloadConstants();
