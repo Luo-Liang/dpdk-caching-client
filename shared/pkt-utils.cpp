@@ -38,8 +38,7 @@ IP IP::FromString(std::string str)
     IP ret;
     if (4 != sscanf(str.c_str(), "%d.%d.%d.%d", ret.Bytes, ret.Bytes + 1, ret.Bytes + 2, ret.Bytes + 3))
     {
-         throw std::runtime_error(str + std::string(" is an invalid IP address"));
-       
+        throw std::runtime_error(str + std::string(" is an invalid IP address"));
     }
     return ret;
 }
@@ -53,15 +52,29 @@ struct common_hdr
 } __attribute__((packed));
 
 /* Application Headers */
-#define ECHO_PAYLOAD_LEN 5
+#define MEMCACHED_PAYLOAD_LEN 1024
+#define REDIS_PAYLOAD_LEN 1024
+
 std::string contents;
 
-void InitializePayloadConstants()
+void InitializePayloadConstants(pkt_type type)
 {
     if (contents.size() != 0)
         return;
     std::string templatedStr = "PLINK TECHNOLOGIES";
-    for (int i = 0; i < ECHO_PAYLOAD_LEN; i++)
+    int len = 0;
+    switch (type)
+    {
+    case pkt_type::MEMCACHED:
+        len = MEMCACHED_PAYLOAD_LEN;
+        break;
+    case pkt_type::REDIS:
+        len = REDIS_PAYLOAD_LEN;
+        break;
+    default:
+        break;
+    }
+    for (int i = 0; i < len; i++)
     {
         contents += templatedStr.at(i % templatedStr.size());
     }
@@ -174,6 +187,7 @@ void pkt_set_attribute(struct rte_mbuf *buf)
     buf->l3_len = sizeof(struct ipv4_hdr);
 }
 
+//create a zipfian ready key value.
 void pkt_client_data_build(char *pkt_ptr,
                            enum pkt_type type)
 {
@@ -201,46 +215,6 @@ int pkt_client_process(struct rte_mbuf *buf,
         if (!memcmp(mypkt->payload, contents.c_str(), ECHO_PAYLOAD_LEN))
         {
             ret = 1;
-        }
-    }
-    else
-    {
-        // do nothing
-    }
-
-    return ret;
-}
-
-static void
-pkt_server_data_build(char *payload,
-                      enum pkt_type type)
-{
-    if (type == ECHO)
-    {
-        rte_memcpy(payload, contents.c_str(), ECHO_PAYLOAD_LEN);
-    }
-    else
-    {
-        // do nothing
-    }
-}
-
-int pkt_server_process(struct rte_mbuf *buf,
-                       enum pkt_type type)
-{
-    int ret = 1;
-
-    if (type == ECHO)
-    {
-        struct echo_hdr *mypkt;
-
-        mypkt = rte_pktmbuf_mtod(buf, struct echo_hdr *);
-        if (!memcmp(mypkt->payload, contents.c_str(), ECHO_PAYLOAD_LEN))
-        {
-            pkt_swap_address(&mypkt->pro_hdr);
-            pkt_server_data_build(mypkt->payload, type);
-
-            ret = 0;
         }
     }
     else
