@@ -40,7 +40,7 @@
 #include <sys/queue.h>
 #include <unistd.h>
 #include <sys/time.h>
-
+#include <string>
 #include <rte_memory.h>
 #include <rte_memzone.h>
 #include <rte_launch.h>
@@ -50,41 +50,23 @@
 #include <rte_debug.h>
 #include <rte_ethdev.h>
 #include <vector>
-#include "../shared/cluster-cfg.h"
+#include <unordered_map>
+#include <iostream>
+#include <fstream>
+#include "../shared/dpdk-helpers.h"
 #include "../shared/pkt-utils.h"
+#include "../shared/argparse.h"
 
-#define NUM_MBUFS 8191
-#define MBUF_CACHE_SIZE 250
-#define RX_RING_SIZE 512
-#define TX_RING_SIZE 512
-#define BATCH_SIZE 36
-#define rte_eth_dev_count_avail rte_eth_dev_count
-enum benchmark_phase
-{
-    BENCHMARK_WARMUP,
-    BENCHMARK_RUNNING,
-    BENCHMARK_COOLDOWN,
-    BENCHMARK_DONE,
-} __attribute__((aligned(64)));
-
-struct lcore_args
-{
-    std::vector<MACAddress> srcMacs;
-    std::vector<IP> srcIPs;
-    enum pkt_type type;
-    uint8_t tid;
-    volatile enum benchmark_phase *phase;
-    struct rte_mempool *pool;
-} __attribute__((packed));
-
-struct settings
-{
-    uint32_t warmup_time;
-    uint32_t run_time;
-    uint32_t cooldown_time;
-} __attribute__((packed));
+// enum benchmark_phase
+// {
+//     BENCHMARK_WARMUP,
+//     BENCHMARK_RUNNING,
+//     BENCHMARK_COOLDOWN,
+//     BENCHMARK_DONE,
+// } __attribute__((aligned(64)));
 
 uint64_t tot_proc_pkts = 0, tot_elapsed = 0;
+std::unordered_map<uint32_t, uint32_t> lCore2Idx;
 /*static inline void 
 pkt_dump(struct rte_mbuf *buf)
 {
@@ -92,226 +74,131 @@ pkt_dump(struct rte_mbuf *buf)
     rte_pktmbuf_dump(stdout, buf, rte_pktmbuf_pkt_len(buf));
 }*/
 
-static inline int
-ports_init(struct lcore_args *largs,
-           uint8_t threadnum)
-{
-    rte_eth_conf port_conf_default;
-    memset(&port_conf_default, 0, sizeof(rte_eth_conf));
-    port_conf_default.rxmode.mq_mode = ETH_MQ_RX_RSS;
-    //port_conf_default.rxmode.max_rx_pkt_len = ETHER_MAX_LEN;
-    //port_conf_default.rxmode.split_hdr_size = 0;
-    //port_conf_default.rxmode.ignore_offload_bitfield = 1;
-    //port_conf_default.rxmode.offloads = (DEV_RX_OFFLOAD_CRC_STRIP | DEV_RX_OFFLOAD_CHECKSUM);
-
-    //port_conf_default.rx_adv_conf.rss_conf.rss_key = NULL;
-    //port_conf_default.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_IP;
-
-    port_conf_default.txmode.mq_mode = ETH_MQ_TX_NONE;
-    struct rte_eth_conf port_conf = port_conf_default;
-    uint8_t q, rx_rings, tx_rings, nb_ports;
-    int retval, i;
-    char bufpool_name[32];
-    struct ether_addr myaddr;
-    uint16_t port;
-
-    nb_ports = rte_eth_dev_count_avail();
-    printf("Number of ports of the server is %" PRIu8 "\n", nb_ports);
-
-    for (i = 0; i < threadnum; i++)
-    {
-        largs[i].tid = i;
-        sprintf(bufpool_name, "bufpool_%d", i);
-        largs[i].pool = rte_pktmbuf_pool_create(bufpool_name,
-                                                NUM_MBUFS * threadnum, MBUF_CACHE_SIZE, 0,
-                                                RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
-        if (largs[i].pool == NULL)
-        {
-            rte_exit(EXIT_FAILURE, "Error: rte_pktmbuf_pool_create failed\n");
-        }
-        //largs[i].src_id = (int *)malloc(sizeof(int) * nb_ports);
-        largs[i].srcIPs.resize(nb_ports);
-        largs[i].srcMacs.resize(nb_ports);
-        for (port = 0; port < nb_ports; port++)
-        {
-            rte_eth_macaddr_get(port, &myaddr);
-            largs[i].src_id[port] = get_endhost_id(myaddr);
-        }
-    }
-
-    for (port = 0; port < nb_ports; port++)
-    {
-        rx_rings = tx_rings = threadnum;
-        retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
-        if (retval != 0)
-        {
-            printf("port init failed. %s. retval = %d\n", rte_strerror(rte_errno), retval);
-            return retval;
-        }
-
-        rte_eth_rxconf rxqConf;
-
-        //rte_eth_conf* pConf;
-        //rte_eth_dev* pDev = &rte_eth_devices[port];
-        rte_eth_dev_info devInfo;
-        rte_eth_dev_info_get(port, &devInfo);                
-        rxqConf = devInfo.default_rxconf;
-        //pConf = &pDev->data->dev_conf;
-        //rxqConf.offloads = pConf->rxmode.offloads;
-        /* Configure the Ethernet device of a given port */
-     
-
-        /* Allocate and set up RX queues for a given Ethernet port */
-        for (q = 0; q < rx_rings; q++)
-        {
-            retval = rte_eth_rx_queue_setup(port, q, RX_RING_SIZE,
-                                            rte_eth_dev_socket_id(port), &rxqConf, largs[q].pool);
-            if (retval < 0)
-            {
-                return retval;
-            }
-        }
-
-
-        rte_eth_txconf txqConf;
-        txqConf = devInfo.default_txconf;
-        //txqConf.txq_flags = ETH_TXQ_FLAGS_IGNORE;
-        //txqConf.offloads = port_conf.txmode.offloads;
-        /* Allocate and set up TX queues for a given Ethernet port */
-        for (q = 0; q < tx_rings; q++)
-        {
-            retval = rte_eth_tx_queue_setup(port, q, TX_RING_SIZE,
-                                            rte_eth_dev_socket_id(port), &txqConf);
-            if (retval < 0)
-            {
-                return retval;
-            }
-        }
-
-        /* Start the Ethernet port */
-        retval = rte_eth_dev_start(port);
-        if (retval < 0)
-        {
-            return retval;
-        }
-
-        /* Enable RX in promiscuous mode for the Ethernet device */
-        rte_eth_promiscuous_enable(port);
-    }
-
-    return 0;
-}
-
-
 static int
-lcore_execute(__attribute__((unused)) void *arg)
+lcore_execute(void *arg)
 {
-    int n;
     struct lcore_args *myarg;
     uint8_t queue;
     struct rte_mempool *pool;
-    volatile enum benchmark_phase *phase;
-    struct rte_mbuf *bufs[BATCH_SIZE];
-    uint16_t bsz, i, port, nb_ports;
-    char *pkt_ptr;
+    //volatile enum benchmark_phase *phase;
+    //receive buffers.
+    struct rte_mbuf *rbufs[BATCH_SIZE];
     struct timeval start, end;
     uint64_t elapsed;
 
     myarg = (struct lcore_args *)arg;
-    queue = myarg->tid;
+    queue = 0; //myarg->tid; one port is only touched by one processor for dpdk-echo.
+    //one port probably needs to be touched by multiple procs in real app.
     pool = myarg->pool;
-    phase = myarg->phase;
-    bsz = BATCH_SIZE;
-    nb_ports = rte_eth_dev_count_avail();
-    int pktCntr = 0;
-    do
+    //phase = myarg->phase;
+    //bsz = BATCH_SIZE;
+    if (myarg->associatedPorts.size() == 0)
     {
-        gettimeofday(&start, NULL);
+        printf("Thread %d has finished executing.\n", myarg->tid);
+        return 0;
+    }
 
-        for (port = 0; port < nb_ports; port++)
+
+    if(myarg->associatedPorts.size() > 1)
+    {
+        assert(false);
+    }
+
+
+    rte_mbuf *bufPorts[RTE_MAX_ETHPORTS];
+    char* pktPtrPorts[RTE_MAX_ETHPORTS];
+    pkt_type pktTypesPorts[RTE_MAX_ETHPORTS];
+    for (int i = 0; i < myarg->associatedPorts.size(); i++)
+    {
+        auto port = myarg->associatedPorts.at(i);
+        //let me create a batch of packets that i will be using all the time, which is one.
+        auto pBuf = rte_pktmbuf_alloc(pool);
+        if (pBuf == NULL)
+        {
+            rte_exit(EXIT_FAILURE, "Error: pktmbuf pool allocation failed.");
+        }
+        rte_mbuf_refcnt_set(pBuf, myarg->counter);
+        auto pkt_ptr = rte_pktmbuf_append(pBuf, pkt_size(myarg->type));
+        pkt_build(pkt_ptr, myarg->srcs.at(i), myarg->dst,
+                  myarg->type, queue, myarg->AzureSupport);
+        pkt_set_attribute(pBuf, myarg->AzureSupport);
+        bufPorts[port] = pBuf;
+        pktPtrPorts[port] = pkt_ptr;
+    }
+    uint32_t expectedRemoteIp = ip_2_uint32(myarg->dst.ip);
+    while (myarg->samples.size() < myarg->counter)
+    {
+        for (auto port : myarg->associatedPorts)
         {
             /* Receive and process responses */
-            do
+            //send a single packet and wait for response.
+            /* Prepare and send requests */
+            auto pBuf = bufPorts[port];
+            auto pktBuf = pktPtrPorts[port];
+            pktTypesPorts[port] = pkt_client_data_build(pktBuf);
+            //pkt_dump(bufs[i]);
+            if (0 > rte_eth_tx_burst(port, queue, &pBuf, 1))
             {
-                if ((n = rte_eth_rx_burst(port, queue, bufs, bsz)) < 0)
+                rte_exit(EXIT_FAILURE, "Error: cannot tx_burst packets");
+            }
+            gettimeofday(&start, NULL);
+            /* free non-sent buffers */
+            bool found = false;
+            while (found == false)
+            {
+                int recv = 0;
+                if ((recv = rte_eth_rx_burst(port, queue, rbufs, BATCH_SIZE)) < 0)
                 {
                     rte_exit(EXIT_FAILURE, "Error: rte_eth_rx_burst failed\n");
                 }
 
-                for (i = 0; i < n; i++)
+                gettimeofday(&end, NULL);
+                for (int i = 0; i < recv; i++)
                 {
-                    if ((*phase == BENCHMARK_RUNNING) &&
-                        pkt_client_process(bufs[i], myarg->type))
+                    if (pkt_client_process(rbufs[i], myarg->type, expectedRemoteIp))
                     {
-                        __sync_fetch_and_add(&tot_proc_pkts, 1);
+                        found = true;
+                        //__sync_fetch_and_add(&tot_proc_pkts, 1);
+                        elapsed = (end.tv_sec - start.tv_sec) * 1000000 +
+                                  (end.tv_usec - start.tv_usec);
+                        myarg->samples.push_back(elapsed);
                     }
                 }
 
-                for (i = 0; i < n; i++)
+                for (int i = 0; i < recv; i++)
                 {
-                    rte_pktmbuf_free(bufs[i]);
+                    rte_pktmbuf_free(rbufs[i]);
                 }
 
-            } while (n == bsz); // More packets in the RX queue
-
-            /* Prepare and send requests */
-            for (i = 0; i < bsz; i++)
-            {
-                if ((bufs[i] = rte_pktmbuf_alloc(pool)) == NULL)
+                //what if the packet is lost??
+                long timeDelta = (long)(end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec);
+                if (timeDelta > 1000000)
                 {
-                    break;
+                    //1 sec is long enough for us to tell the packet is lost.
+                    found = true;
+                    //this will trigger a resend.
+                    if (myarg->samples.size() == myarg->counter - 1)
+                    {
+                        myarg->samples.push_back(timeDelta);
+                    }
                 }
-            }
-            n = i;
-            for (i = 0; i < n; i++)
-            {
-                pkt_ptr = rte_pktmbuf_append(bufs[i], pkt_size(myarg->type));
-                pkt_header_build(pkt_ptr, myarg->src_id[port], myarg->des_id,
-                                 myarg->type, queue);
-                pkt_set_attribute(bufs[i]);
-                pkt_client_data_build(pkt_ptr, myarg->type);
-                //pkt_dump(bufs[i]);
-            }
-            i = rte_eth_tx_burst(port, queue, bufs, n);
-            pktCntr+=i;
-            /* free non-sent buffers */
-            for (; i < n; i++)
-            {
-                rte_pktmbuf_free(bufs[i]);
+                //but what about server is turned off, because it thinks it sent the last message?
+                //but that last messagfe is lost? i cannot resend forever.
             }
         }
-
-        gettimeofday(&end, NULL);
-        elapsed = (end.tv_sec - start.tv_sec) * 1000000 +
-                  (end.tv_usec - start.tv_usec);
-
-        if (*phase == BENCHMARK_RUNNING)
-        {
-            tot_elapsed += elapsed;
-        }
-
-    } while (*phase != BENCHMARK_DONE);
-    printf("worker %" PRIu8 " done. counter = %d\n", myarg->tid, pktCntr);
-
+    }
+    printf("Thread %d has finished executing.\n", myarg->tid);
     return 0;
 }
 
 int main(int argc, char **argv)
 {
-
-    int ret, i;
     unsigned lcore_id;
     uint8_t threadnum;
     struct lcore_args *largs;
-    volatile enum benchmark_phase phase;
-    struct settings mysettings = {
-        .warmup_time = 5,
-        .run_time = 10,
-        .cooldown_time = 5,
-    };
 
     /* Initialize the Environment Abstraction Layer (EAL) */
-    ret = rte_eal_init(argc, argv);
+    int ret = rte_eal_init(argc, argv);
     if (ret < 0)
     {
         rte_exit(EXIT_FAILURE, "Error: cannot init EAL\n");
@@ -320,66 +207,154 @@ int main(int argc, char **argv)
     argv += ret;
 
     /* Initialize application args */
-    if (argc != 4)
+    /*if (argc != 4)
     {
         printf("Usage: %s <type> <dest IP> <dest MAC>\n", argv[0]);
         rte_exit(EXIT_FAILURE, "Error: invalid arguments\n");
+    }*/
+
+    ArgumentParser ap;
+    ap.addArgument("--srcIps", '+', false);
+    ap.addArgument("--srcMacs", '+', false);
+    ap.addArgument("--dstIp", 1, false);
+    ap.addArgument("--dstMac", 1, false);
+    ap.addArgument("--samples", 1, false);
+    ap.addArgument("--sid", 1, true);
+    ap.addArgument("--did", 1, true);
+    ap.addArgument("--blocked", true);
+    ap.addArgument("--output", 1, true);
+    //enable Windows Azure support
+    ap.addArgument("--az", 1, true);
+
+    ap.parse(argc, (const char **)argv);
+
+    std::vector<std::string> srcips = ap.retrieve<std::vector<std::string>>("srcIps");
+    std::vector<std::string> srcMacs = ap.retrieve<std::vector<std::string>>("srcMacs");
+    if (srcips.size() != srcMacs.size())
+    {
+        rte_exit(EXIT_FAILURE, "specify same number of ips and macs.");
+    }
+    endhost destination;
+    destination.id = 9367;
+    IPFromString(ap.retrieve<std::string>("dstIp"), destination.ip);
+    MACFromString(ap.retrieve<std::string>("dstMac"), destination.mac);
+
+    size_t samples = atoi(ap.retrieve<std::string>("samples").c_str());
+    if (samples == -1)
+    {
+        rte_exit(EXIT_FAILURE, "what is %s?", ap.retrieve<std::string>("samples").c_str());
     }
     InitializePayloadConstants();
     /* Initialize NIC ports */
-    threadnum = rte_lcore_count() - 1;
-    largs = (lcore_args *)calloc(threadnum, sizeof(*largs));
-    for (i = 0; i < threadnum; i++)
+    threadnum = rte_lcore_count();
+    if (threadnum < 2)
     {
-        largs[i].tid = i;
-        largs[i].phase = &phase;
-        largs[i].type = (pkt_type)atoi(argv[1]);
-        largs[i].des_id = atoi(argv[2]);
+        rte_exit(EXIT_FAILURE, "use -c -l?! give more cores.");
     }
-    ret = ports_init(largs, threadnum);
-    if(ret != 0)
+    largs = (lcore_args *)calloc(threadnum, sizeof(*largs));
+
+    std::unordered_map<int, int> lCore2Idx;
+    std::unordered_map<int, int> Idx2LCore;
+    CoreIdxMap(lCore2Idx, Idx2LCore);
+    bool MSFTAZ = false;
+    if (ap.count("az") > 0)
+    {
+        MSFTAZ = false;
+    }
+    for (int idx = 0; idx < threadnum; idx++)
+    {
+        int CORE = Idx2LCore.at(idx);
+        largs[idx].CoreID = CORE;
+        largs[idx].tid = idx;
+        largs[idx].type = pkt_type::ECHO; //(pkt_type)atoi(argv[1]);
+        largs[idx].dst = destination;
+        largs[idx].counter = samples;
+        largs[idx].master = rte_get_master_lcore() == largs[idx].CoreID;
+        largs[idx].AzureSupport = MSFTAZ;
+    }
+    std::vector<std::string> blockedIFs;
+    if (ap.count("blocked") > 0)
+    {
+        blockedIFs = ap.retrieve<std::vector<std::string>>("blocked");
+    }
+    ret = ports_init(largs, threadnum, srcips, srcMacs, blockedIFs);
+    if (ret != 0)
     {
         printf("port init failed. %s.\n", rte_strerror(rte_errno));
     }
 
     /* Start applications */
     printf("Starting Workers\n");
-    phase = BENCHMARK_WARMUP;
-    if (mysettings.warmup_time)
-    {
-        sleep(mysettings.warmup_time);
-        printf("Warmup done\n");
-    }
+    // phase = BENCHMARK_WARMUP;
+    // if (mysettings.warmup_time)
+    // {
+    //     sleep(mysettings.warmup_time);
+    //     printf("Warmup done\n");
+    // }
 
     /* call lcore_execute() on every slave lcore */
     RTE_LCORE_FOREACH_SLAVE(lcore_id)
     {
-        rte_eal_remote_launch(lcore_execute, (void *)(largs + lcore_id - 1),
+        rte_eal_remote_launch(lcore_execute, (void *)(&largs[lCore2Idx.at(lcore_id)]),
                               lcore_id);
     }
 
-    phase = BENCHMARK_RUNNING;
-    sleep(mysettings.run_time);
+    //sleep(mysettings.run_time);
 
-    if (mysettings.cooldown_time)
-    {
-        printf("Starting cooldown\n");
-        phase = BENCHMARK_COOLDOWN;
-        sleep(mysettings.cooldown_time);
-    }
+    // if (mysettings.cooldown_time)
+    // {
+    //     printf("Starting cooldown\n");
+    //     phase = BENCHMARK_COOLDOWN;
+    //     sleep(mysettings.cooldown_time);
+    // }
 
-    phase = BENCHMARK_DONE;
-    printf("Benchmark done\n");
+    // printf("Benchmark done\n");
 
     rte_eal_mp_wait_lcore();
-    /* print status */
-    printf("Latency is %lf us\n", (tot_elapsed + 0.0) / (tot_proc_pkts + 0.0));
-    printf("Throughput is %lf reqs/s\n", (tot_proc_pkts + 0.0) /
-                                             (mysettings.run_time + 0.0));
+    printf("All threads have finished executing.\n");
 
-    for (i = 0; i < threadnum; i++)
+    /* print status */
+    if (ap.count("output") > 0)
     {
-        free(largs->src_id);
+        if (ap.count("sid") == 0 || ap.count("did") == 0)
+        {
+            rte_exit(EXIT_FAILURE, "if output is specified, sid and did must also be specified");
+        }
+        auto file = ap.retrieve<std::string>("output");
+        std::string appHeader("BENCHMARK:DPDK_ECHO;SELF_TEST_OPTION:FALSE;DIMENSION:${totalClients};VALUE:AVG;PREPROCESS:0");
+        std::ofstream ofile;
+        ofile.open(file);
+        for (int i = 0; i < threadnum; i++)
+        {
+            for (auto t : largs[i].samples)
+            {
+                //from, to, ping result
+                ofile << ap.retrieve<std::string>("sid") << ","
+                      << ap.retrieve<std::string>("did") << ","
+                      << t
+                      << std::endl;
+            }
+        }
+        ofile.close();
+        printf("file written to %s\r\n", file.c_str());
+    }
+    else
+    {
+        //compute min, max latency.
+        uint64_t min = UINT64_MAX, max = 0, avg = 0;
+        size_t cntr = 0;
+        for (int i = 0; i < threadnum; i++)
+        {
+            for (auto t : largs[i].samples)
+            {
+                //from, to, ping result
+                min = std::min(min, t);
+                max = std::max(max, t);
+                avg += t;
+            }
+            cntr += largs[i].samples.size();
+        }
+        printf("MIN = %d, MAX = %d, AVG = %d\n", (int)min, (int)max, (int)(avg / cntr));
     }
     free(largs);
     return 0;

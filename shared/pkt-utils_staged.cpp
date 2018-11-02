@@ -7,10 +7,13 @@
 #include <rte_ip.h>
 #include <rte_udp.h>
 #include <rte_memcpy.h>
-#include "dpdk-helpers.h"
+
+#include "cluster-cfg.h"
 #include "pkt-utils.h"
 #include <string>
 #include <stdexcept>
+
+#include "zipfian.h"
 
 /* Marcos */
 #define ETHER_HEADER_LEN 14
@@ -47,34 +50,27 @@ std::string string_format(const std::string fmt_str, ...)
     return std::string(formatted.get());
 }
 
-void MACFromString(std::string str, uint8_t Bytes[6])
+MACAddress MACAddress::FromString(std::string str)
 {
-    int bytes[6];
+    MACAddress ret;
     if (std::sscanf(str.c_str(),
                     "%02x:%02x:%02x:%02x:%02x:%02x",
-                    &bytes[0], &bytes[1], &bytes[2],
-                    &bytes[3], &bytes[4], &bytes[5]) != 6)
+                    &ret.Bytes[0], &ret.Bytes[1], &ret.Bytes[2],
+                    &ret.Bytes[3], &ret.Bytes[4], &ret.Bytes[5]) != 6)
     {
         throw std::runtime_error(str + std::string(" is an invalid MAC address"));
     }
-    for (int i = 0; i < 6; i++)
-    {
-        Bytes[i] = (uint8_t)bytes[i];
-    }
+    return ret;
 }
 
-void IPFromString(std::string str, uint8_t Bytes[4])
+IP IP::FromString(std::string str)
 {
-    int bytes[4];
-    if (4 != sscanf(str.c_str(), "%d.%d.%d.%d", bytes, bytes + 1, bytes + 2, bytes + 3))
+    IP ret;
+    if (4 != sscanf(str.c_str(), "%d.%d.%d.%d", ret.Bytes, ret.Bytes + 1, ret.Bytes + 2, ret.Bytes + 3))
     {
         throw std::runtime_error(str + std::string(" is an invalid IP address"));
     }
-
-    for (int i = 0; i < 4; i++)
-    {
-        Bytes[i] = (uint8_t)bytes[i];
-    }
+    return ret;
 }
 
 /* Common Header */
@@ -86,10 +82,7 @@ struct common_hdr
 } __attribute__((packed));
 
 /* Application Headers */
-#define ECHO_PAYLOAD_LEN 5
-//int ECHO_PAYLOAD_LEN = 0;
 std::string contents;
-
 void InitializePayloadConstants()
 {
     if (contents.size() != 0)
@@ -112,25 +105,16 @@ struct CachingHeader
 } __attribute__((packed));
 
 uint16_t
-pkt_size(enum pkt_type type)
+pkt_size()
 {
     uint16_t ret;
 
     ret = ETHER_HEADER_LEN + IP_HEADER_LEN + UDP_HEADER_LEN;
 
-    switch (type)
-    {
-    case ECHO:
-        ret += ECHO_PAYLOAD_LEN;
-        break;
-    default:
-        break;
-    }
-
-    return ret;
+    return ret + PAYLOAD_LEN;
 }
 
-uint32_t
+static inline uint32_t
 ip_2_uint32(uint8_t ip[])
 {
     uint32_t myip = 0;
@@ -162,61 +146,52 @@ pkt_swap_address(struct common_hdr *comhdr)
     comhdr->ip.src_addr = tmp_ip;
     comhdr->udp.src_port = tmp_udp;
 
-    // Clear old checksumcomhdr->ip);
-    //comhdr->ip.hdr_checksum = 0;
-    //comhdr->udp.dgram_cksum = 0;
-    //comhdr->udp.dgram_cksum = rte_ipv4_udptcp_cksum(&comhdr->ip, &comhdr->udp);
+    // Clear old checksum
+    comhdr->ip.hdr_checksum = 0;
+    comhdr->ip.hdr_checksum = rte_ipv4_cksum(&comhdr->ip);
+    comhdr->udp.dgram_cksum = 0;
 }
 
-void pkt_build(char *pkt_ptr,
-               endhost &src,
-               endhost &des,
-               enum pkt_type type,
-               uint8_t tid,
-               bool manualCksum)
+void pkt_header_build(char *pkt_ptr,
+                      int src_id,
+                      int des_id,
+                      enum pkt_type type,
+                      uint8_t tid)
 {
-    common_hdr *myhdr = (struct common_hdr *)pkt_ptr;
+    struct common_hdr *myhdr = (struct common_hdr *)pkt_ptr;
+    struct endhost *mysrc = get_endhost(src_id);
+    struct endhost *mydes = get_endhost(des_id);
 
     // Ethernet header
-    rte_memcpy(myhdr->ether.d_addr.addr_bytes, des.mac, ETHER_ADDR_LEN);
-    rte_memcpy(myhdr->ether.s_addr.addr_bytes, src.mac, ETHER_ADDR_LEN);
+    rte_memcpy(myhdr->ether.d_addr.addr_bytes, mydes->mac, ETHER_ADDR_LEN);
+    rte_memcpy(myhdr->ether.s_addr.addr_bytes, mysrc->mac, ETHER_ADDR_LEN);
     myhdr->ether.ether_type = htons(ETHER_TYPE_IPv4);
+    udphdr uhdr;
     // IP header
     myhdr->ip.version_ihl = 0x45;
     myhdr->ip.total_length = htons(pkt_size(type) - ETHER_HEADER_LEN);
     myhdr->ip.packet_id = htons(44761);
-    myhdr->ip.fragment_offset = htons(1 << 14);
+    myhdr->ip.fragment_offset = 0;
     myhdr->ip.time_to_live = 64;
     myhdr->ip.next_proto_id = IPPROTO_UDP;
-    myhdr->ip.src_addr = ip_2_uint32(src.ip);
-    myhdr->ip.dst_addr = ip_2_uint32(des.ip);
-    myhdr->ip.hdr_checksum = 0;
-    //if (manualCksum)
-    //{
-    //}
+    //myhdr->ip.hdr_checksum = 0;
+    myhdr->ip.hdr_checksum = 0; // htons(0xa122);//rte_ipv4_cksum(&myhdr->ip);
+    myhdr->ip.src_addr = ip_2_uint32(mysrc->ip);
+    myhdr->ip.dst_addr = ip_2_uint32(mydes->ip);
     //printf("building a udp packet from ip = %d.%d.%d.%d to %d.%d.%d.%d\n", mysrc->ip[0], mysrc->ip[1], mysrc->ip[2], mysrc->ip[3], mydes->ip[0], mydes->ip[1], mydes->ip[2], mydes->ip[3]);
     // UDP header
-    myhdr->udp.src_port = htons(UDP_SRC_PORT + tid);
-    myhdr->udp.dst_port = htons(UDP_DES_PORT);
-    myhdr->udp.dgram_len = htons(pkt_size(type) - ETHER_HEADER_LEN - IP_HEADER_LEN); // -
+    myhdr->udp.src_port = uhdr.uh_sport = htons(UDP_SRC_PORT + tid);
+    myhdr->udp.dst_port = uhdr.uh_dport = htons(UDP_DES_PORT);
+    myhdr->udp.dgram_len = uhdr.uh_ulen = htons(pkt_size(type) - ETHER_HEADER_LEN - IP_HEADER_LEN); // -
         //UDP_HEADER_LEN;
-    //pkt_client_data_build(pkt_ptr, type);
-    myhdr->udp.dgram_cksum = 0;
-    //if(manualCksum)
-    //{
-    myhdr->udp.dgram_cksum = rte_ipv4_udptcp_cksum(&myhdr->ip, &myhdr->udp); // | 0; // uhdr.uh_sum = htons(0xba29);
-    //}
+    myhdr->udp.dgram_cksum = 0; // uhdr.uh_sum = htons(0xba29);
     //myhdr->udp.dgram_cksum = udp_checksum(&uhdr, myhdr->ip.src_addr, myhdr->ip.dst_addr);
     //printf("ip checksum = %d, udp checksum = %d\n", myhdr->ip.hdr_checksum, myhdr->udp.dgram_cksum);
 }
 
-void pkt_set_attribute(struct rte_mbuf *buf, bool manualCksum)
+void pkt_set_attribute(struct rte_mbuf *buf)
 {
-    buf->ol_flags |= PKT_TX_IPV4;
-    if (manualCksum == false)
-    {
-        //buf->ol_flags |= PKT_TX_IP_CKSUM;
-    }
+    buf->ol_flags |= PKT_TX_IPV4 | PKT_TX_UDP_CKSUM | PKT_TX_IP_CKSUM;
     buf->l2_len = sizeof(struct ether_hdr);
     buf->l3_len = sizeof(struct ipv4_hdr);
 }
@@ -257,11 +232,6 @@ pkt_type pkt_client_data_build(char *pkt_ptr)
 
         rte_memcpy(mypkt->payload, writePayload.c_str(), writePayload.size());
     }
-
-    common_hdr *myhdr = (struct common_hdr *)pkt_ptr;
-    myhdr->ip.hdr_checksum = rte_ipv4_cksum(&myhdr->ip);
-    myhdr->udp.dgram_cksum = rte_ipv4_udptcp_cksum(&myhdr->ip, &myhdr->udp); // | 0; // uhdr.uh_sum = htons(0xba29);
-
     return type;
 }
 
@@ -279,7 +249,7 @@ int pkt_client_process(struct rte_mbuf *buf,
             ret = 1;
         }
     }
-    else if (type == pkt_type::MEMCACHED_WRITE)
+    else if(type == pkt_type::MEMCACHED_WRITE)
     {
         // do nothing
         if (!memcmp(mypkt->payload, "STORED", 5))
