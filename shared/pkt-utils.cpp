@@ -266,8 +266,14 @@ pkt_type pkt_client_data_build(char *pkt_ptr)
 }
 
 int pkt_client_process(struct rte_mbuf *buf,
-                       enum pkt_type type)
+                       enum pkt_type type,
+                       uint32_t ip)
 {
+    if (mypkt->pro_hdr.ip.src_addr != ip)
+    {
+        return 0;
+    }
+    
     int ret = 0;
     struct CachingHeader *mypkt;
 
