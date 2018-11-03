@@ -118,7 +118,7 @@ lcore_execute(void *arg)
             rte_exit(EXIT_FAILURE, "Error: pktmbuf pool allocation failed.");
         }
         rte_mbuf_refcnt_set(pBuf, myarg->counter);
-        auto pkt_ptr = rte_pktmbuf_append(pBuf, pkt_size(myarg->type));
+        auto pkt_ptr = rte_pktmbuf_append(pBuf, PAYLOAD_LEN);
         pkt_build(pkt_ptr, myarg->srcs.at(i), myarg->dst,
                   myarg->type, queue, myarg->AzureSupport);
         pkt_set_attribute(pBuf, myarg->AzureSupport);
@@ -155,7 +155,7 @@ lcore_execute(void *arg)
                 gettimeofday(&end, NULL);
                 for (int i = 0; i < recv; i++)
                 {
-                    if (pkt_client_process(rbufs[i], myarg->type, expectedRemoteIp))
+                    if (pkt_client_process(rbufs[i], pktTypesPorts[port], expectedRemoteIp))
                     {
                         found = true;
                         //__sync_fetch_and_add(&tot_proc_pkts, 1);
@@ -266,7 +266,7 @@ int main(int argc, char **argv)
         int CORE = Idx2LCore.at(idx);
         largs[idx].CoreID = CORE;
         largs[idx].tid = idx;
-        largs[idx].type = pkt_type::ECHO; //(pkt_type)atoi(argv[1]);
+        //largs[idx].type = pkt_type::ECHO; //(pkt_type)atoi(argv[1]);
         largs[idx].dst = destination;
         largs[idx].counter = samples;
         largs[idx].master = rte_get_master_lcore() == largs[idx].CoreID;

@@ -29,7 +29,8 @@
 
 enum pkt_type
 {
-    ECHO,
+  MEMCACHED_READ,
+  MEMCACHED_WRITE
 };
 
 struct endhost
@@ -43,7 +44,7 @@ struct lcore_args
 {
     std::vector<endhost> srcs;
     endhost dst;
-    enum pkt_type type;
+  //enum pkt_type type;
     //the index of this arg in largs*, where a master is also included at 0.
     uint8_t tid;
     //volatile enum benchmark_phase *phase;

@@ -11,7 +11,7 @@
 #include <cassert>
 #include <cstdio>
 #include "dpdk-helpers.h"
-
+#define PAYLOAD_LEN 1200
 struct udphdr
 {
   u_short uh_sport; /* source port */
@@ -31,7 +31,7 @@ void pkt_build(char *pkt_ptr,
                uint8_t tid,
                bool manualCksum);
 void pkt_set_attribute(struct rte_mbuf *buf, bool manualCksum);
-void pkt_client_data_build(char *pkt_ptr, enum pkt_type type);
+void pkt_client_data_build(char *pkt_ptr);
 int pkt_client_process(struct rte_mbuf *buf,
                        enum pkt_type type,
                        uint32_t ip);

@@ -20,10 +20,11 @@
 #define UDP_DES_PORT 5678
 #define MEMCACHED_KEY_LEN 7 //1000000
 #define MEMCACHED_READ_HEADER_FMT "\x00\x00\x00\x00\x00\x01\x00\x00get %d\r\n"
+#define MEMCACHED_READ_HEADER_FULL_LEN (8 + 3 + 1 + MEMCACHED_KEY_LEN + 1 + 1)
 #define MEMCACHED_PAYLOAD_LEN 1024
 #define MEMCACHED_PAYLOAD_LEN_STR "1024"
 #define MEMCACHED_WRITE_HEADER_FMT "\x00\x00\x00\x00\x00\x01\x00\x00set %d 0 0 " MEMCACHED_PAYLOAD_LEN_STR "\r\n%s\r\n"
-#define PAYLOAD_LEN 1100
+#define MEMCACHED_WRITE_HEADER_FULL_LEN (8 + 3 + 1 + MEMCACHED_KEY_LEN + 1 + 1 + 1 + 1 + 1 + 4 + 1 + 1 + MEMCACHED_PAYLOAD_LEN + 1 + 1)
 #include <stdarg.h> // For va_start, etc.
 #include <memory>   // For std::unique_ptr
 
@@ -117,16 +118,7 @@ pkt_size(enum pkt_type type)
     uint16_t ret;
 
     ret = ETHER_HEADER_LEN + IP_HEADER_LEN + UDP_HEADER_LEN;
-
-    switch (type)
-    {
-    case ECHO:
-        ret += ECHO_PAYLOAD_LEN;
-        break;
-    default:
-        break;
-    }
-
+    
     return ret;
 }
 
@@ -171,7 +163,6 @@ pkt_swap_address(struct common_hdr *comhdr)
 void pkt_build(char *pkt_ptr,
                endhost &src,
                endhost &des,
-               enum pkt_type type,
                uint8_t tid,
                bool manualCksum)
 {
@@ -201,13 +192,15 @@ void pkt_build(char *pkt_ptr,
     myhdr->udp.dgram_len = htons(pkt_size(type) - ETHER_HEADER_LEN - IP_HEADER_LEN); // -
         //UDP_HEADER_LEN;
     //pkt_client_data_build(pkt_ptr, type);
-    myhdr->udp.dgram_cksum = 0;
+    //myhdr->udp.dgram_cksum = 0;
     //if(manualCksum)
     //{
-    myhdr->udp.dgram_cksum = rte_ipv4_udptcp_cksum(&myhdr->ip, &myhdr->udp); // | 0; // uhdr.uh_sum = htons(0xba29);
     //}
-    //myhdr->udp.dgram_cksum = udp_checksum(&uhdr, myhdr->ip.src_addr, myhdr->ip.dst_addr);
-    //printf("ip checksum = %d, udp checksum = %d\n", myhdr->ip.hdr_checksum, myhdr->udp.dgram_cksum);
+    auto type = pkt_client_data_build(pkt_ptr);
+    myhdr->ip.hdr_checksum = rte_ipv4_cksum(&myhdr->ip);
+    myhdr->udp.dgram_cksum = rte_ipv4_udptcp_cksum(&myhdr->ip, &myhdr->udp); // | 0; // uhdr.uh_sum = htons(0xba29);
+
+    return type;
 }
 
 void pkt_set_attribute(struct rte_mbuf *buf, bool manualCksum)
@@ -244,7 +237,7 @@ pkt_type pkt_client_data_build(char *pkt_ptr)
         //retrieve a zipfian key
 
         std::string fmtStr(MEMCACHED_READ_HEADER_FMT);
-        std::string readPayload = string_format(fmtStr, std::string(key));
+        std::string readPayload = string_format(fmtStr, std::to_string(key));
 
         rte_memcpy(mypkt->payload, readPayload.c_str(), readPayload.size());
     }
@@ -253,14 +246,14 @@ pkt_type pkt_client_data_build(char *pkt_ptr)
         struct CachingHeader *mypkt = (struct CachingHeader *)pkt_ptr;
         //retrieve a zipfian key
         std::string fmtStr(MEMCACHED_WRITE_HEADER_FMT);
-        std::string writePayload = string_format(fmtStr, std::string(key), contents);
+        std::string writePayload = string_format(fmtStr, std::to_string(key), contents);
 
         rte_memcpy(mypkt->payload, writePayload.c_str(), writePayload.size());
     }
 
     common_hdr *myhdr = (struct common_hdr *)pkt_ptr;
-    myhdr->ip.hdr_checksum = rte_ipv4_cksum(&myhdr->ip);
-    myhdr->udp.dgram_cksum = rte_ipv4_udptcp_cksum(&myhdr->ip, &myhdr->udp); // | 0; // uhdr.uh_sum = htons(0xba29);
+    //myhdr->ip.hdr_checksum = rte_ipv4_cksum(&myhdr->ip);
+    //myhdr->udp.dgram_cksum = rte_ipv4_udptcp_cksum(&myhdr->ip, &myhdr->udp); // | 0; // uhdr.uh_sum = htons(0xba29);
 
     return type;
 }
@@ -269,13 +262,15 @@ int pkt_client_process(struct rte_mbuf *buf,
                        enum pkt_type type,
                        uint32_t ip)
 {
+    CachingHeader *mypkt;
+    mypkt = rte_pktmbuf_mtod(buf, CachingHeader*);
+
     if (mypkt->pro_hdr.ip.src_addr != ip)
     {
         return 0;
     }
     
     int ret = 0;
-    struct CachingHeader *mypkt;
 
     mypkt = rte_pktmbuf_mtod(buf, struct CachingHeader *);
     if (type == pkt_type::MEMCACHED_READ)
