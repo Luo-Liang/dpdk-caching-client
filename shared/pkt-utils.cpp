@@ -116,9 +116,19 @@ uint16_t
 pkt_size(enum pkt_type type)
 {
     uint16_t ret;
+    switch (type)
+    {
+    case MEMCACHED_READ:
+        ret = MEMCACHED_READ_HEADER_FULL_LEN;
+        break;
+    case MEMCACHED_WRITE:
+        ret = MEMCACHED_WRITE_HEADER_FULL_LEN;
+        break;
+    default:
+        assert(false);
+    }
+    ret += ETHER_HEADER_LEN + IP_HEADER_LEN + UDP_HEADER_LEN;
 
-    ret = ETHER_HEADER_LEN + IP_HEADER_LEN + UDP_HEADER_LEN;
-    
     return ret;
 }
 
@@ -160,7 +170,7 @@ pkt_swap_address(struct common_hdr *comhdr)
     //comhdr->udp.dgram_cksum = rte_ipv4_udptcp_cksum(&comhdr->ip, &comhdr->udp);
 }
 
-void pkt_build(char *pkt_ptr,
+pkt_type pkt_build(char *pkt_ptr,
                endhost &src,
                endhost &des,
                uint8_t tid,
@@ -174,7 +184,6 @@ void pkt_build(char *pkt_ptr,
     myhdr->ether.ether_type = htons(ETHER_TYPE_IPv4);
     // IP header
     myhdr->ip.version_ihl = 0x45;
-    myhdr->ip.total_length = htons(pkt_size(type) - ETHER_HEADER_LEN);
     myhdr->ip.packet_id = htons(44761);
     myhdr->ip.fragment_offset = htons(1 << 14);
     myhdr->ip.time_to_live = 64;
@@ -189,14 +198,16 @@ void pkt_build(char *pkt_ptr,
     // UDP header
     myhdr->udp.src_port = htons(UDP_SRC_PORT + tid);
     myhdr->udp.dst_port = htons(UDP_DES_PORT);
-    myhdr->udp.dgram_len = htons(pkt_size(type) - ETHER_HEADER_LEN - IP_HEADER_LEN); // -
-        //UDP_HEADER_LEN;
+    //UDP_HEADER_LEN;
     //pkt_client_data_build(pkt_ptr, type);
     //myhdr->udp.dgram_cksum = 0;
     //if(manualCksum)
     //{
     //}
     auto type = pkt_client_data_build(pkt_ptr);
+
+    myhdr->ip.total_length = htons(pkt_size(type) - ETHER_HEADER_LEN);
+    myhdr->udp.dgram_len = htons(pkt_size(type) - ETHER_HEADER_LEN - IP_HEADER_LEN); // -
     myhdr->ip.hdr_checksum = rte_ipv4_cksum(&myhdr->ip);
     myhdr->udp.dgram_cksum = rte_ipv4_udptcp_cksum(&myhdr->ip, &myhdr->udp); // | 0; // uhdr.uh_sum = htons(0xba29);
 
@@ -263,13 +274,13 @@ int pkt_client_process(struct rte_mbuf *buf,
                        uint32_t ip)
 {
     CachingHeader *mypkt;
-    mypkt = rte_pktmbuf_mtod(buf, CachingHeader*);
+    mypkt = rte_pktmbuf_mtod(buf, CachingHeader *);
 
     if (mypkt->pro_hdr.ip.src_addr != ip)
     {
         return 0;
     }
-    
+
     int ret = 0;
 
     mypkt = rte_pktmbuf_mtod(buf, struct CachingHeader *);

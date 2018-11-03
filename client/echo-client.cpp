@@ -98,16 +98,15 @@ lcore_execute(void *arg)
         return 0;
     }
 
-
-    if(myarg->associatedPorts.size() > 1)
+    if (myarg->associatedPorts.size() > 1)
     {
         assert(false);
     }
 
-
     rte_mbuf *bufPorts[RTE_MAX_ETHPORTS];
-    char* pktPtrPorts[RTE_MAX_ETHPORTS];
+    char *pktPtrPorts[RTE_MAX_ETHPORTS];
     pkt_type pktTypesPorts[RTE_MAX_ETHPORTS];
+    int port2Id[RTE_MAX_ETHPORTS]; 
     for (int i = 0; i < myarg->associatedPorts.size(); i++)
     {
         auto port = myarg->associatedPorts.at(i);
@@ -119,11 +118,10 @@ lcore_execute(void *arg)
         }
         rte_mbuf_refcnt_set(pBuf, myarg->counter);
         auto pkt_ptr = rte_pktmbuf_append(pBuf, PAYLOAD_LEN);
-        pkt_build(pkt_ptr, myarg->srcs.at(i), myarg->dst,
-                  myarg->type, queue, myarg->AzureSupport);
-        pkt_set_attribute(pBuf, myarg->AzureSupport);
+
         bufPorts[port] = pBuf;
         pktPtrPorts[port] = pkt_ptr;
+        port2Id[port] = i;
     }
     uint32_t expectedRemoteIp = ip_2_uint32(myarg->dst.ip);
     while (myarg->samples.size() < myarg->counter)
@@ -135,7 +133,11 @@ lcore_execute(void *arg)
             /* Prepare and send requests */
             auto pBuf = bufPorts[port];
             auto pktBuf = pktPtrPorts[port];
-            pktTypesPorts[port] = pkt_client_data_build(pktBuf);
+
+            pkt_build(pkt_ptr, myarg->srcs.at(port2Id[port]), myarg->dst, queue, myarg->AzureSupport);
+            pkt_set_attribute(pBuf, myarg->AzureSupport);
+
+            //pktTypesPorts[port] = pkt_client_data_build(pktBuf);
             //pkt_dump(bufs[i]);
             if (0 > rte_eth_tx_burst(port, queue, &pBuf, 1))
             {
