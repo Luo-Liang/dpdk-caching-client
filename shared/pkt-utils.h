@@ -24,13 +24,13 @@ void MACFromString(std::string str, uint8_t bytes[6]);
 void IPFromString(std::string str, uint8_t bytes[4]);
 
 uint16_t pkt_size(enum pkt_type type);
-pkt_build pkt_build(char *pkt_ptr,
+pkt_type pkt_build(char *pkt_ptr,
                endhost &src,
                endhost &des,
                uint8_t tid,
                bool manualCksum);
 void pkt_set_attribute(struct rte_mbuf *buf, bool manualCksum);
-void pkt_client_data_build(char *pkt_ptr);
+pkt_type pkt_client_data_build(char *pkt_ptr);
 int pkt_client_process(struct rte_mbuf *buf,
                        enum pkt_type type,
                        uint32_t ip);

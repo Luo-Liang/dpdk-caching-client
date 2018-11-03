@@ -11,7 +11,7 @@
 #include "pkt-utils.h"
 #include <string>
 #include <stdexcept>
-
+#include "zipfian.h"
 /* Marcos */
 #define ETHER_HEADER_LEN 14
 #define IP_HEADER_LEN 20

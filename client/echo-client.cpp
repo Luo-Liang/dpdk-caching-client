@@ -134,7 +134,7 @@ lcore_execute(void *arg)
             auto pBuf = bufPorts[port];
             auto pktBuf = pktPtrPorts[port];
 
-            pkt_build(pkt_ptr, myarg->srcs.at(port2Id[port]), myarg->dst, queue, myarg->AzureSupport);
+            pkt_build(pktBuf, myarg->srcs.at(port2Id[port]), myarg->dst, queue, myarg->AzureSupport);
             pkt_set_attribute(pBuf, myarg->AzureSupport);
 
             //pktTypesPorts[port] = pkt_client_data_build(pktBuf);
