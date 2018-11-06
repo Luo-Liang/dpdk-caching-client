@@ -19,17 +19,17 @@
 #define UDP_SRC_PORT 1234
 #define UDP_DES_PORT 11211
 #define MEMCACHED_KEY_LEN 7 //1000000
-#define MEMCACHED_READ_HEADER_FMT "\x00\x00\x00\x00\x00\x01\x00\x00get %d\r\n"
-#define MEMCACHED_READ_HEADER_FULL_LEN (8 + 3 + 1 + MEMCACHED_KEY_LEN + 1 + 1)
-#define MEMCACHED_READ_HEADER_DRY_LEN (8 + 3 + 1 + 2 + 1 + 1)
+#define MEMCACHED_PREAMBLE "\x00\x00\x00\x00\x00\x01\x00\x00"
+#define MEMCACHED_READ_HEADER_FMT "get %d\r\n"
+#define MEMCACHED_READ_HEADER_FULL_LEN (3 + 1 + MEMCACHED_KEY_LEN + 1 + 1)
 #define MEMCACHED_PAYLOAD_LEN 1024
 #define MEMCACHED_PAYLOAD_LEN_STR "1024"
-#define MEMCACHED_WRITE_HEADER_FMT "\x00\x00\x00\x00\x00\x01\x00\x00set %d 0 0 " MEMCACHED_PAYLOAD_LEN_STR "\r\n%s\r\n"
-#define MEMCACHED_WRITE_HEADER_DRY_LEN  (8 + 3 + 1 + 2                 + 1 + 1 + 1 + 1 + 1 + 4 + 1 + 1 + 2                     + 1 + 1)
-#define MEMCACHED_WRITE_HEADER_FULL_LEN (8 + 3 + 1 + MEMCACHED_KEY_LEN + 1 + 1 + 1 + 1 + 1 + 4 + 1 + 1 + MEMCACHED_PAYLOAD_LEN + 1 + 1)
+#define MEMCACHED_WRITE_HEADER_FMT "set %d 0 0 " MEMCACHED_PAYLOAD_LEN_STR "\r\n%s\r\n"
+#define MEMCACHED_WRITE_HEADER_FULL_LEN (3 + 1 + MEMCACHED_KEY_LEN + 1 + 1 + 1 + 1 + 1 + 4 + 1 + 1 + MEMCACHED_PAYLOAD_LEN + 1 + 1)
 #include <stdarg.h> // For va_start, etc.
 #include <memory>   // For std::unique_ptr
 
+//only works with %s.
 std::string string_format(const std::string fmt_str, ...)
 {
     int final_n, n = ((int)fmt_str.size()) * 2; /* Reserve two times as much as the length of the fmt_str */
@@ -173,10 +173,10 @@ pkt_swap_address(struct common_hdr *comhdr)
 }
 
 pkt_type pkt_build(char *pkt_ptr,
-               endhost &src,
-               endhost &des,
-               uint8_t tid,
-               bool manualCksum)
+                   endhost &src,
+                   endhost &des,
+                   uint8_t tid,
+                   bool manualCksum)
 {
     common_hdr *myhdr = (struct common_hdr *)pkt_ptr;
 
@@ -236,7 +236,7 @@ pkt_type pkt_client_data_build(char *pkt_ptr)
     if (z >= 0.95 || firstRun)
     {
         type = pkt_type::MEMCACHED_WRITE;
-	firstRun = false;
+        firstRun = false;
     }
     else
     {
@@ -250,19 +250,20 @@ pkt_type pkt_client_data_build(char *pkt_ptr)
     {
         struct CachingHeader *mypkt = (struct CachingHeader *)pkt_ptr;
         //retrieve a zipfian key
-
-        std::string fmtStr(MEMCACHED_READ_HEADER_FMT, MEMCACHED_READ_HEADER_DRY_LEN);
-        std::string readPayload = string_format(fmtStr, std::to_string(key));
-	printf("read payload: %s\n", readPayload.c_str());
+        std::string readPayload = std::string(MEMCACHED_PREAMBLE, 8);
+        std::string fmtStr(MEMCACHED_READ_HEADER_FMT);
+        readPayload += string_format(fmtStr, key);
+        printf("read payload: %s\n", readPayload.c_str());
         rte_memcpy(mypkt->payload, readPayload.c_str(), readPayload.size());
     }
     else if (type == pkt_type::MEMCACHED_WRITE)
     {
         struct CachingHeader *mypkt = (struct CachingHeader *)pkt_ptr;
         //retrieve a zipfian key
-        std::string fmtStr(MEMCACHED_WRITE_HEADER_FMT, MEMCACHED_WRITE_HEADER_DRY_LEN);
-        std::string writePayload = string_format(fmtStr, key, contents.c_str());
-	printf("header = %s .write payload: %s\n", fmtStr.c_str(), writePayload.c_str());
+        std::string writePayload = std::string(MEMCACHED_PREAMBLE, 8);
+        std::string fmtStr(MEMCACHED_WRITE_HEADER_FMT);
+        writePayload += string_format(fmtStr, key, contents.c_str());
+        printf("header = %s .write payload: %s\n", fmtStr.c_str(), writePayload.c_str());
         rte_memcpy(mypkt->payload, writePayload.c_str(), writePayload.size());
     }
 
