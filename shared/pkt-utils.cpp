@@ -17,13 +17,15 @@
 #define IP_HEADER_LEN 20
 #define UDP_HEADER_LEN 8
 #define UDP_SRC_PORT 1234
-#define UDP_DES_PORT 5678
+#define UDP_DES_PORT 11211
 #define MEMCACHED_KEY_LEN 7 //1000000
 #define MEMCACHED_READ_HEADER_FMT "\x00\x00\x00\x00\x00\x01\x00\x00get %d\r\n"
 #define MEMCACHED_READ_HEADER_FULL_LEN (8 + 3 + 1 + MEMCACHED_KEY_LEN + 1 + 1)
+#define MEMCACHED_READ_HEADER_DRY_LEN (8 + 3 + 1 + 2 + 1 + 1)
 #define MEMCACHED_PAYLOAD_LEN 1024
 #define MEMCACHED_PAYLOAD_LEN_STR "1024"
 #define MEMCACHED_WRITE_HEADER_FMT "\x00\x00\x00\x00\x00\x01\x00\x00set %d 0 0 " MEMCACHED_PAYLOAD_LEN_STR "\r\n%s\r\n"
+#define MEMCACHED_WRITE_HEADER_DRY_LEN  (8 + 3 + 1 + 2                 + 1 + 1 + 1 + 1 + 1 + 4 + 1 + 1 + 2                     + 1 + 1)
 #define MEMCACHED_WRITE_HEADER_FULL_LEN (8 + 3 + 1 + MEMCACHED_KEY_LEN + 1 + 1 + 1 + 1 + 1 + 4 + 1 + 1 + MEMCACHED_PAYLOAD_LEN + 1 + 1)
 #include <stdarg.h> // For va_start, etc.
 #include <memory>   // For std::unique_ptr
@@ -230,9 +232,11 @@ pkt_type pkt_client_data_build(char *pkt_ptr)
 {
     double z = ((double)rand() / (RAND_MAX));
     pkt_type type;
-    if (z >= 0.95)
+    static bool firstRun = true;
+    if (z >= 0.95 || firstRun)
     {
         type = pkt_type::MEMCACHED_WRITE;
+	firstRun = false;
     }
     else
     {
@@ -247,18 +251,18 @@ pkt_type pkt_client_data_build(char *pkt_ptr)
         struct CachingHeader *mypkt = (struct CachingHeader *)pkt_ptr;
         //retrieve a zipfian key
 
-        std::string fmtStr(MEMCACHED_READ_HEADER_FMT);
+        std::string fmtStr(MEMCACHED_READ_HEADER_FMT, MEMCACHED_READ_HEADER_DRY_LEN);
         std::string readPayload = string_format(fmtStr, std::to_string(key));
-
+	printf("read payload: %s\n", readPayload.c_str());
         rte_memcpy(mypkt->payload, readPayload.c_str(), readPayload.size());
     }
     else if (type == pkt_type::MEMCACHED_WRITE)
     {
         struct CachingHeader *mypkt = (struct CachingHeader *)pkt_ptr;
         //retrieve a zipfian key
-        std::string fmtStr(MEMCACHED_WRITE_HEADER_FMT);
-        std::string writePayload = string_format(fmtStr, std::to_string(key), contents);
-
+        std::string fmtStr(MEMCACHED_WRITE_HEADER_FMT, MEMCACHED_WRITE_HEADER_DRY_LEN);
+        std::string writePayload = string_format(fmtStr, key, contents.c_str());
+	printf("header = %s .write payload: %s\n", fmtStr.c_str(), writePayload.c_str());
         rte_memcpy(mypkt->payload, writePayload.c_str(), writePayload.size());
     }
 
