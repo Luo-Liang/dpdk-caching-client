@@ -67,6 +67,7 @@
 
 uint64_t tot_proc_pkts = 0, tot_elapsed = 0;
 std::unordered_map<uint32_t, uint32_t> lCore2Idx;
+int id = 0;
 /*static inline void 
 pkt_dump(struct rte_mbuf *buf)
 {
@@ -74,6 +75,7 @@ pkt_dump(struct rte_mbuf *buf)
     rte_pktmbuf_dump(stdout, buf, rte_pktmbuf_pkt_len(buf));
 }*/
 
+extern bool KEY_SEEN[];
 static int
 lcore_execute(void *arg)
 {
@@ -106,7 +108,8 @@ lcore_execute(void *arg)
     rte_mbuf *bufPorts[RTE_MAX_ETHPORTS];
     char *pktPtrPorts[RTE_MAX_ETHPORTS];
     pkt_type pktTypesPorts[RTE_MAX_ETHPORTS];
-    int port2Id[RTE_MAX_ETHPORTS]; 
+    int port2Id[RTE_MAX_ETHPORTS];
+    int port2Key[RTE_MAX_ETHPORTS];
     for (int i = 0; i < myarg->associatedPorts.size(); i++)
     {
         auto port = myarg->associatedPorts.at(i);
@@ -134,8 +137,7 @@ lcore_execute(void *arg)
             /* Prepare and send requests */
             auto pBuf = bufPorts[port];
             auto pktBuf = pktPtrPorts[port];
-
-            pktTypesPorts[port] = pkt_build(pktBuf, myarg->srcs.at(port2Id[port]), myarg->dst, queue, myarg->AzureSupport);
+            pktTypesPorts[port] = pkt_build(pktBuf, myarg->srcs.at(port2Id[port]), myarg->dst, queue, myarg->AzureSupport, port2Key[port]);
             pkt_set_attribute(pBuf, myarg->AzureSupport);
 
             //pktTypesPorts[port] = pkt_client_data_build(pktBuf);
@@ -165,6 +167,11 @@ lcore_execute(void *arg)
                         elapsed = (end.tv_sec - start.tv_sec) * 1000000 +
                                   (end.tv_usec - start.tv_usec);
                         myarg->samples.push_back(elapsed);
+                        if (pktTypesPorts[port] == pkt_type::MEMCACHED_WRITE)
+                        {
+                            KEY_SEEN[port2Key[port]] = true;
+                        }
+                        break;
                     }
                 }
 
@@ -228,6 +235,7 @@ int main(int argc, char **argv)
     ap.addArgument("--output", 1, true);
     //enable Windows Azure support
     ap.addArgument("--az", 1, true);
+    ap.addArgument("--id", 1, false);
 
     ap.parse(argc, (const char **)argv);
 
@@ -241,6 +249,8 @@ int main(int argc, char **argv)
     destination.id = 9367;
     IPFromString(ap.retrieve<std::string>("dstIp"), destination.ip);
     MACFromString(ap.retrieve<std::string>("dstMac"), destination.mac);
+
+    id = atoi(ap.retrieve<std::string>("id").c_str());
 
     size_t samples = atoi(ap.retrieve<std::string>("samples").c_str());
     if (samples == -1)

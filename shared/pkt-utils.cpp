@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include "zipfian.h"
 /* Marcos */
+#define KEY_COUNT 1000000
 #define ETHER_HEADER_LEN 14
 #define IP_HEADER_LEN 20
 #define UDP_HEADER_LEN 8
@@ -176,7 +177,8 @@ pkt_type pkt_build(char *pkt_ptr,
                    endhost &src,
                    endhost &des,
                    uint8_t tid,
-                   bool manualCksum)
+                   bool manualCksum,
+                   int& key)
 {
     common_hdr *myhdr = (struct common_hdr *)pkt_ptr;
 
@@ -227,25 +229,30 @@ void pkt_set_attribute(struct rte_mbuf *buf, bool manualCksum)
     buf->l3_len = sizeof(struct ipv4_hdr);
 }
 
+bool KEY_SEEN[KEY_COUNT];
 //create a zipfian ready key value.
 pkt_type pkt_client_data_build(char *pkt_ptr)
 {
     double z = ((double)rand() / (RAND_MAX));
     pkt_type type;
     static bool firstRun = true;
-    if (z >= 0.95 || firstRun)
+    if (firstRun)
+    {
+        memset(KEY_SEEN, 0, sizeof(bool) * KEY_COUNT);
+        firstRun = false;
+    }
+    if (z >= 0.95)
     {
         type = pkt_type::MEMCACHED_WRITE;
-        firstRun = false;
     }
     else
     {
         type = pkt_type::MEMCACHED_READ;
     }
-    int key = zipf(0.99, 1000000);
+    int key = zipf(0.99, KEY_COUNT);
     //zipf generates a key from 1 to 1M. I don't want to deal with padding to 7 digits
     // so just add 1M
-    key += 1000000;
+    key += KEY_COUNT;
     if (type == pkt_type::MEMCACHED_READ)
     {
         struct CachingHeader *mypkt = (struct CachingHeader *)pkt_ptr;
