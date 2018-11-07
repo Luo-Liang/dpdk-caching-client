@@ -124,6 +124,7 @@ lcore_execute(void *arg)
         port2Id[port] = i;
     }
     uint32_t expectedRemoteIp = ip_2_uint32(myarg->dst.ip);
+    //if I want to issue a read, make sure that key has a value in memcached.
     while (myarg->samples.size() < myarg->counter)
     {
         for (auto port : myarg->associatedPorts)
@@ -134,7 +135,7 @@ lcore_execute(void *arg)
             auto pBuf = bufPorts[port];
             auto pktBuf = pktPtrPorts[port];
 
-            pkt_build(pktBuf, myarg->srcs.at(port2Id[port]), myarg->dst, queue, myarg->AzureSupport);
+            pktTypesPorts[port] = pkt_build(pktBuf, myarg->srcs.at(port2Id[port]), myarg->dst, queue, myarg->AzureSupport);
             pkt_set_attribute(pBuf, myarg->AzureSupport);
 
             //pktTypesPorts[port] = pkt_client_data_build(pktBuf);

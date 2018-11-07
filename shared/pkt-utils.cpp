@@ -253,7 +253,7 @@ pkt_type pkt_client_data_build(char *pkt_ptr)
         std::string readPayload = std::string(MEMCACHED_PREAMBLE, 8);
         std::string fmtStr(MEMCACHED_READ_HEADER_FMT);
         readPayload += string_format(fmtStr, key);
-        printf("read payload: %s\n", readPayload.c_str());
+        printf("header = %s.read payload: %s\n", fmtStr.c_str(), string_format(fmtStr, key).c_str());
         rte_memcpy(mypkt->payload, readPayload.c_str(), readPayload.size());
     }
     else if (type == pkt_type::MEMCACHED_WRITE)
@@ -263,7 +263,7 @@ pkt_type pkt_client_data_build(char *pkt_ptr)
         std::string writePayload = std::string(MEMCACHED_PREAMBLE, 8);
         std::string fmtStr(MEMCACHED_WRITE_HEADER_FMT);
         writePayload += string_format(fmtStr, key, contents.c_str());
-        printf("header = %s .write payload: %s\n", fmtStr.c_str(), writePayload.c_str());
+        printf("header = %s.write payload: %s\n", fmtStr.c_str(), string_format(fmtStr, key, contents.c_str()).c_str());
         rte_memcpy(mypkt->payload, writePayload.c_str(), writePayload.size());
     }
 
